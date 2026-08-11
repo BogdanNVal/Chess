@@ -1,124 +1,123 @@
-# Sah — Joc de sah cu interfata grafica (MATLAB)
+# Chess — Chess Game with Graphical Interface (MATLAB)
 
-Joc de sah scris in MATLAB, cu tabla desenata intr-o interfata grafica proprie
-(drag & drop cu mouse-ul), reprezentare a pozitiei prin bitboard-uri si un
-motor propriu de cautare a mutarilor (minimax cu alpha-beta pruning) pentru
-modul Utilizator vs Robot.
+A chess game written in MATLAB, with a board drawn in a custom graphical
+interface (mouse drag & drop), position representation via bitboards, and a
+custom move-search engine (minimax with alpha-beta pruning) for User vs
+Robot mode.
 
-## Screenshot-uri
+## Screenshots
 
-![Tabla la pozitia initiala](docs/screenshots/tabla-initiala.png)
-![O partida in desfasurare](docs/screenshots/partida.png)
-![Sah / sah mat evidentiat](docs/screenshots/sah-mat.png)
+![Board at the starting position](docs/screenshots/tabla-initiala.png)
+![A game in progress](docs/screenshots/partida.png)
+![Check / checkmate highlighted](docs/screenshots/sah-mat.png)
 
-## Functionalitati
+## Features
 
-- **Interfata grafica proprie**: tabla de 8x8 desenata cu componente MATLAB
-  App (`uifigure`, `uiimage`), cu piesele randate din imagini PNG.
-- **Mutare prin drag & drop**: piesele se prind, se trag si se elibereaza cu
-  mouse-ul (`startDrag` / `dragging` / `stopDrag`), nu prin introducerea
-  manuala a coordonatelor.
-- **Doua moduri de joc**: Utilizator vs Utilizator (doi jucatori la aceeasi
-  tabla) si Utilizator vs Robot (impotriva calculatorului).
-- **Motor propriu de cautare**: algoritm minimax cu alpha-beta pruning,
-  adancime de cautare configurabila, folosit de `Robot` pentru a alege
-  mutarea optima.
-- **Generare corecta a mutarilor** pentru fiecare tip de piesa (pion, cal,
-  nebun, tura, regina, rege), cu filtrarea mutarilor care si-ar lasa
-  propriul rege in sah.
-- **Detectare sah, sah mat si pat**, cu evidentierea vizuala a patratelului
-  regelui aflat in sah si afisarea rezultatului partidei pe interfata.
-- **Evidentiere a ultimei mutari** efectuate direct pe tabla.
-- **Incarcare pozitie din FEN** (Forsyth-Edwards Notation) — pozitia de start
-  standard este incarcata implicit la deschiderea jocului si la resetare.
+- **Custom graphical interface**: an 8x8 board drawn with MATLAB App
+  components (`uifigure`, `uiimage`), with pieces rendered from PNG images.
+- **Drag & drop movement**: pieces are grabbed, dragged, and released with
+  the mouse (`startDrag` / `dragging` / `stopDrag`), rather than by manually
+  entering coordinates.
+- **Two game modes**: User vs User (two players on the same board) and User
+  vs Robot (against the computer).
+- **Custom search engine**: minimax algorithm with alpha-beta pruning,
+  configurable search depth, used by `Robot` to choose the optimal move.
+- **Correct move generation** for each piece type (pawn, knight, bishop,
+  rook, queen, king), filtering out moves that would leave one's own king
+  in check.
+- **Check, checkmate, and stalemate detection**, with visual highlighting
+  of the square of the king in check and display of the game result on the
+  interface.
+- **Highlighting of the last move** made, directly on the board.
+- **Loading a position from FEN** (Forsyth-Edwards Notation) — the standard
+  starting position is loaded by default when the game opens and on reset.
 
-## Stack tehnic
+## Tech stack
 
-- MATLAB, programare orientata pe obiecte (`classdef`, clase `handle`)
-- Reprezentarea pozitiei ca **bitboard**: cate un `uint64` pentru fiecare
-  combinatie tip de piesa + culoare (12 bitboard-uri), plus bitboard-uri
-  auxiliare pentru piesele albe, piesele negre si toate patratele ocupate;
-  operatii pe biti (`bitand`, `bitor`, `bitxor`, `bitshift`, `bitget`,
-  `bitset`) pentru interogarea si actualizarea rapida a tablei
-- Interfata grafica: `uifigure`, `uiimage`, evenimente
-  `WindowButtonDownFcn` / `WindowButtonMotionFcn` / `WindowButtonUpFcn`
-  pentru drag & drop
-- Parsare **FEN** pentru initializarea si resetarea pozitiei (piese, cine
-  muta, drepturi de roca)
-- Cautare: **minimax + alpha-beta pruning** (`Engine.m`), cu evaluare a
-  pozitiei bazata pe valoarea materialului (pion, cal, nebun, tura, regina,
-  rege)
-- Clase proprii pentru fiecare concept al jocului: `Bitboard` (pozitia
-  bruta), `Mutari` (generarea si validarea mutarilor), `Engine` (cautarea
-  mutarii optime), `Jucator` (clasa abstracta) cu implementarile
-  `Utilizator` si `Robot`, `Joc` (leaga logica de jucatori), `Piesa` (piesa
-  desenata pe interfata), `Sah` (fereastra principala si interactiunea cu
-  mouse-ul)
-- Imagini PNG pentru piese, in folderul `img/`
+- MATLAB, object-oriented programming (`classdef`, `handle` classes)
+- Position represented as **bitboards**: one `uint64` for each piece
+  type + color combination (12 bitboards), plus auxiliary bitboards for
+  white pieces, black pieces, and all occupied squares; bitwise operations
+  (`bitand`, `bitor`, `bitxor`, `bitshift`, `bitget`, `bitset`) for fast
+  querying and updating of the board
+- Graphical interface: `uifigure`, `uiimage`, `WindowButtonDownFcn` /
+  `WindowButtonMotionFcn` / `WindowButtonUpFcn` events for drag & drop
+- **FEN** parsing for initializing and resetting the position (pieces, side
+  to move, castling rights)
+- Search: **minimax + alpha-beta pruning** (`Engine.m`), with position
+  evaluation based on material value (pawn, knight, bishop, rook, queen,
+  king)
+- Custom classes for each game concept: `Bitboard` (the raw position),
+  `Mutari` (Moves — move generation and validation), `Engine` (search for
+  the optimal move), `Jucator` (Player — abstract class) with the
+  `Utilizator` (User) and `Robot` implementations, `Joc` (Game — links the
+  logic to the players), `Piesa` (Piece — a piece drawn on the interface),
+  `Sah` (Chess — main window and mouse interaction)
+- PNG images for the pieces, in the `img/` folder
 
-## Rulare locala
+## Running locally
 
-1. Deschide MATLAB (recomandat R2020a sau mai nou, pentru suportul complet
-   de `uifigure`/`uiimage` si validarea de tip pe proprietati folosita in
-   clase, ex. `mutari Mutari`).
-2. Seteaza folderul `Sah/` (cel care contine fisierele `.m` si subfolderul
-   `img/`) ca **Current Folder** in MATLAB, sau adauga-l la path — altfel
-   clasele si imaginile pieselor nu vor fi gasite (caile catre imagini sunt
-   relative, ex. `img/pion1.png`).
-3. In Command Window, porneste jocul:
+1. Open MATLAB (R2020a or newer recommended, for full `uifigure`/`uiimage`
+   support and the property type validation used in classes, e.g.
+   `mutari Mutari`).
+2. Set the `Sah/` folder (the one containing the `.m` files and the `img/`
+   subfolder) as the **Current Folder** in MATLAB, or add it to the path —
+   otherwise the classes and piece images won't be found (image paths are
+   relative, e.g. `img/pion1.png`).
+3. In the Command Window, start the game:
    ```matlab
    joc = Sah();
    ```
-4. Implicit se porneste modul **Utilizator vs Utilizator**. Pentru a juca
-   impotriva calculatorului, apeleaza:
+4. **User vs User** mode starts by default. To play against the computer,
+   call:
    ```matlab
-   joc.UtilizatorVsRobot(3); % 3 = adancimea de cautare a motorului
+   joc.UtilizatorVsRobot(3); % 3 = the engine's search depth
    ```
-   O adancime mai mare inseamna un adversar mai puternic, dar si un timp de
-   gandire mai lung (cautarea explora exhaustiv arborele de mutari pana la
-   adancimea data).
+   A greater depth means a stronger opponent, but also a longer thinking
+   time (the search exhaustively explores the move tree down to the given
+   depth).
 
-## Decizii tehnice de retinut
+## Technical decisions worth noting
 
-- **Bitboard in loc de matrice de celule**: operatiile pe biti sunt mult mai
-  rapide decat interogarea unei matrice `cell(8,8)` piesa cu piesa, lucru
-  important mai ales pentru motorul de cautare, care exploreaza sute/mii de
-  pozitii intermediare la fiecare mutare calculata.
-- **Mutarea e reprezentata compact ca un vector `[pozitieInitiala,
-  pozitieFinala, tipPiesaMutata, tipPiesaCapturata]`**. Acelasi format e
-  folosit atat de `actualizareTabla` (aplica mutarea), cat si de
-  `anulareMutare` (o anuleaza exact), ceea ce permite motorului sa faca si
-  sa desfaca mutari pe acelasi obiect `Bitboard`/`Mutari`, fara sa cloneze
-  tabla la fiecare nod din arborele minimax.
-- **Legalitatea unei mutari se verifica prin simulare**: fiecare mutare
-  candidata e aplicata temporar pe tabla, se verifica daca propriul rege
-  ramane in sah, apoi mutarea e anulata (`Mutari.valid`) — mai simplu de
-  implementat corect decat un calcul static al liniilor de atac spre rege,
-  desi ceva mai costisitor.
-- **Evaluarea pozitiei e strict materiala** (suma valorilor pieselor ramase
-  pe tabla), fara factori pozitionali (control de centru, siguranta
-  regelui, structura de pioni). Suficienta pentru o adancime mica de
-  cautare, dar limiteaza taria motorului la adancimi mai mari.
-- **Roca, en passant si promovarea pionului nu sunt implementate**: bitboard-ul
-  retine deja drepturile de roca citite din FEN (`flags`), dar generarea de
-  mutari nu le foloseste inca pentru a produce mutari de roca sau de
-  capturare en passant, iar un pion ajuns pe ultima linie nu e promovat
-  automat la alta piesa — ar necesita extinderea formatului mutarii si a
-  functiilor de generare/actualizare a tablei.
+- **Bitboards instead of a cell matrix**: bitwise operations are much
+  faster than querying an `cell(8,8)` matrix piece by piece, which matters
+  especially for the search engine, which explores hundreds/thousands of
+  intermediate positions for each computed move.
+- **A move is represented compactly as a vector `[startSquare, endSquare,
+  movedPieceType, capturedPieceType]`**. The same format is used both by
+  `actualizareTabla` (applies the move) and `anulareMutare` (undoes it
+  exactly), which lets the engine make and unmake moves on the same
+  `Bitboard`/`Mutari` object, without cloning the board at every node of
+  the minimax tree.
+- **A move's legality is checked by simulation**: each candidate move is
+  temporarily applied to the board, a check is made for whether one's own
+  king remains in check, and then the move is undone (`Mutari.valid`) —
+  simpler to implement correctly than a static calculation of attack lines
+  toward the king, though somewhat more costly.
+- **Position evaluation is purely material-based** (the sum of the values
+  of the pieces remaining on the board), with no positional factors
+  (center control, king safety, pawn structure). Sufficient for a small
+  search depth, but limits the engine's strength at greater depths.
+- **Castling, en passant, and pawn promotion are not implemented**: the
+  bitboard already stores the castling rights read from FEN (`flags`), but
+  move generation doesn't yet use them to produce castling or en passant
+  capture moves, and a pawn reaching the last rank isn't automatically
+  promoted to another piece — this would require extending the move
+  format and the board generation/update functions.
 
-## Structura proiectului
+## Project structure
 
 ```
 Sah/
   Sah/
-    Sah.m                 -> fereastra principala, desenarea tablei, drag & drop cu mouse-ul
-    Joc.m                 -> leaga logica jocului (Mutari) de cei doi jucatori
-    Bitboard.m             -> reprezentarea pozitiei (bitboard-uri uint64), FEN, evaluare
-    Mutari.m               -> generarea si validarea mutarilor pentru fiecare tip de piesa
-    Engine.m               -> motorul de cautare (minimax + alpha-beta pruning)
-    Jucator.m              -> clasa abstracta pentru un jucator
-    Utilizator.m            -> jucator uman (mutari primite din interfata)
-    Robot.m                 -> jucator calculator (foloseste Engine pentru a alege mutarea)
-    Piesa.m                 -> o piesa desenata pe interfata (imagine + pozitie)
-    img/                     -> imagini PNG pentru piese (pion, cal, nebun, tura, regina, rege), alb/negru
+    Sah.m                 -> main window, board drawing, mouse drag & drop
+    Joc.m                 -> links the game logic (Mutari) to the two players
+    Bitboard.m             -> position representation (uint64 bitboards), FEN, evaluation
+    Mutari.m               -> move generation and validation for each piece type
+    Engine.m               -> search engine (minimax + alpha-beta pruning)
+    Jucator.m              -> abstract class for a player
+    Utilizator.m            -> human player (moves received from the interface)
+    Robot.m                 -> computer player (uses Engine to choose the move)
+    Piesa.m                 -> a piece drawn on the interface (image + position)
+    img/                     -> PNG images for the pieces (pawn, knight, bishop, rook, queen, king), white/black
 ```
