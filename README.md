@@ -8,9 +8,9 @@ quiescence search, and a transposition table.
 
 ## Screenshots
 
-![Poziția inițială cu panoul de avantaj material](docs/screenshots/tabla-initiala.png)
-![Partidă în curs — evidențierea ultimei mutări](docs/screenshots/partida.png)
-![Șah mat — dialog de sfârșit de joc](docs/screenshots/sah-mat.png)
+![Poziția inițială cu panoul de avantaj material](docs/screenshots/board-start.png)
+![Partidă în curs — evidențierea ultimei mutări](docs/screenshots/board-midgame.png)
+![Șah mat — dialog de sfârșit de joc](docs/screenshots/board-checkmate.png)
 
 ## Features
 
