@@ -12,6 +12,9 @@ classdef Sah < handle
         mutareEfectuata = true;
         finalizat = true;
         statusLabel
+        scoreTitleLabel
+        scoreLabel
+        layout
         thinking = false
         gameGen = 0
     end
@@ -25,6 +28,7 @@ classdef Sah < handle
             obj.setareInterfata();
             obj.setareTabla();
             obj.deseneazaTabla();
+            obj.syncLayout();
             fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
             obj.joc = Joc(fen);
             obj.UtilizatorVsUtilizator();
@@ -60,12 +64,14 @@ classdef Sah < handle
             obj.tabla = cell(8, 8);
             fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
             obj.joc.reseteaza(fen);
+            obj.syncLayout();
             obj.FEN(fen);
+            obj.actualizeazaScor();
         end
 
         function setareInterfata(obj)
             obj.fig = uifigure("Name", "Șah — Lucrare de licență", "Icon", "img/sah.png");
-            obj.fig.Position = [400, 80, 900, 940];
+            obj.fig.Position = [320, 80, 1100, 940];
             obj.fig.Resize = 'off';
 
             obj.statusLabel = uilabel(obj.fig, ...
@@ -75,19 +81,34 @@ classdef Sah < handle
                 'FontWeight', 'bold', ...
                 'HorizontalAlignment', 'center');
 
+            obj.scoreTitleLabel = uilabel(obj.fig, ...
+                'Position', [880, 780, 180, 28], ...
+                'Text', 'Avantaj material', ...
+                'FontSize', 16, ...
+                'FontWeight', 'bold', ...
+                'HorizontalAlignment', 'center');
+
+            obj.scoreLabel = uilabel(obj.fig, ...
+                'Position', [880, 740, 180, 36], ...
+                'Text', 'Egal', ...
+                'FontSize', 22, ...
+                'FontWeight', 'bold', ...
+                'FontColor', [0.25, 0.25, 0.25], ...
+                'HorizontalAlignment', 'center');
+
             menu = uimenu(obj.fig);
             menu.Text = 'Joc nou';
 
             menu1 = uimenu(menu);
-            menu1.Text = 'Utilizator vs Utilizator';
+            menu1.Text = 'Jucător vs Jucător';
             menu1.MenuSelectedFcn = @(src, event) obj.UtilizatorVsUtilizator;
 
             menu2 = uimenu(menu);
-            menu2.Text = 'Utilizator vs Robot';
+            menu2.Text = 'Jucător vs Calculator';
 
             for d = 1:5
                 m = uimenu(menu2);
-                m.Text = sprintf('Adâncime=%d', d);
+                m.Text = sprintf('Adâncime %d', d);
                 m.MenuSelectedFcn = @(src, event) obj.UtilizatorVsRobot(d);
             end
         end
@@ -133,9 +154,38 @@ classdef Sah < handle
             end
         end
 
+        function syncLayout(obj)
+            % Plot box (InnerPosition) is the true board rectangle — not axes OuterPosition.
+            drawnow;
+            ip = obj.ax.InnerPosition;
+            sq = ip(3) / 8;
+            obj.layout = struct( ...
+                'left', ip(1), ...
+                'bottom', ip(2), ...
+                'square', sq, ...
+                'piece', round(sq * 0.88));
+        end
+
         function adaugaPiesa(obj, coloana, linie, c)
-            p = Piesa(c, [coloana, linie], obj.fig);
+            p = Piesa(c, [coloana, linie], obj.fig, obj.layout);
             obj.tabla{linie+1, coloana+1} = p;
+        end
+
+        function actualizeazaScor(obj)
+            if isempty(obj.scoreLabel) || ~isvalid(obj.scoreLabel)
+                return;
+            end
+            n = obj.joc.logic.bitboard.avantajMaterial();
+            if n == 0
+                obj.scoreLabel.Text = 'Egal';
+                obj.scoreLabel.FontColor = [0.25, 0.25, 0.25];
+            elseif n > 0
+                obj.scoreLabel.Text = sprintf('Alb +%d', n);
+                obj.scoreLabel.FontColor = [0.12, 0.35, 0.18];
+            else
+                obj.scoreLabel.Text = sprintf('Negru +%d', -n);
+                obj.scoreLabel.FontColor = [0.35, 0.15, 0.15];
+            end
         end
 
         function FEN(obj, fen)
@@ -178,7 +228,7 @@ classdef Sah < handle
             end
             obj.reseteaza();
             obj.joc.seteazaAdversar('Utilizator');
-            obj.setStatus('Mod: Utilizator vs Utilizator');
+            obj.setStatus('Mod: Jucător vs Jucător');
         end
 
         function UtilizatorVsRobot(obj, d)
@@ -187,7 +237,7 @@ classdef Sah < handle
             end
             obj.reseteaza();
             obj.joc.seteazaAdversar('Robot', d);
-            obj.setStatus(sprintf('Mod: Utilizator vs Robot (adâncime %d)', d));
+            obj.setStatus(sprintf('Mod: Jucător vs Calculator (adâncime %d)', d));
         end
     end
 
@@ -266,10 +316,10 @@ classdef Sah < handle
             end
         end
 
-        function [coloana, linie] = mouseToSquare(~, mousePos)
-            % Same geometry as Piesa / board axes (100px squares from [48,50])
-            coloana = floor((mousePos(1) - Piesa.BOARD_LEFT) / Piesa.SQUARE) + 1;
-            linie = floor((mousePos(2) - Piesa.BOARD_BOTTOM) / Piesa.SQUARE) + 1;
+        function [coloana, linie] = mouseToSquare(obj, mousePos)
+            L = obj.layout;
+            coloana = floor((mousePos(1) - L.left) / L.square) + 1;
+            linie = floor((mousePos(2) - L.bottom) / L.square) + 1;
         end
     end
 
@@ -314,6 +364,7 @@ classdef Sah < handle
             moved = obj.joc.realizeazaMutare(mutare);
             if moved
                 obj.aplicaMutareUI(obj.joc.ultimaMutare);
+                obj.actualizeazaScor();
                 obj.actualizeazaStareJoc();
                 ok = true;
             else
@@ -328,7 +379,7 @@ classdef Sah < handle
             gen = obj.gameGen;
             obj.thinking = true;
             obj.finalizat = false;
-            obj.setStatus(sprintf('Robotul se gândește… (max ~%.0fs)', obj.joc.adversar.logic.timeLimit));
+            obj.setStatus(sprintf('Calculatorul se gândește… (max ~%.0fs)', obj.joc.adversar.logic.timeLimit));
             drawnow;
             if gen ~= obj.gameGen
                 obj.thinking = false;
@@ -349,6 +400,7 @@ classdef Sah < handle
                 return;
             end
             obj.aplicaMutareUI(obj.joc.ultimaMutare);
+            obj.actualizeazaScor();
             gameOver = obj.actualizeazaStareJoc();
             if ~gameOver
                 obj.finalizat = true;
@@ -449,7 +501,7 @@ classdef Sah < handle
         function promo = dialogPromovare(obj, tipPion)
             % uiconfirm (not listdlg): listdlg is a Java dialog and can hide
             % or break the parent uifigure after the user picks an option.
-            opts = {'Dama', 'Tura', 'Nebun', 'Cal', 'Anulează'};
+            opts = {'Damă', 'Turn', 'Nebun', 'Cal', 'Anulează'};
             try
                 choice = uiconfirm(obj.fig, 'Alege piesa în care se promovează pionul:', ...
                     'Promovare', ...
@@ -459,7 +511,7 @@ classdef Sah < handle
                     'Icon', 'question');
             catch
                 % Fallback if uiconfirm unavailable: auto-queen without dialog
-                choice = 'Dama';
+                choice = 'Damă';
             end
 
             if isempty(choice) || strcmp(choice, 'Anulează')
@@ -468,8 +520,8 @@ classdef Sah < handle
             end
 
             switch choice
-                case 'Dama', promo = 5;
-                case 'Tura', promo = 4;
+                case 'Damă', promo = 5;
+                case 'Turn', promo = 4;
                 case 'Nebun', promo = 3;
                 case 'Cal', promo = 2;
                 otherwise, promo = 0;

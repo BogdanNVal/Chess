@@ -326,6 +326,15 @@ classdef Bitboard < handle
             scor = double(obj.material) + obj.pstScore;
         end
 
+        function n = avantajMaterial(obj)
+            % Avantaj material în unități de pion (alb - negru). Regii sunt ignorați.
+            % Greutăți: P=1, N/B=3, R=5, Q=9.
+            n = obj.popcount(obj.P) + 3 * obj.popcount(obj.N) + 3 * obj.popcount(obj.B) ...
+                + 5 * obj.popcount(obj.R) + 9 * obj.popcount(obj.Q) ...
+                - obj.popcount(obj.p) - 3 * obj.popcount(obj.n) - 3 * obj.popcount(obj.b) ...
+                - 5 * obj.popcount(obj.r) - 9 * obj.popcount(obj.q);
+        end
+
         function nullMoveBegin(obj)
             obj.pushHistory();
             if obj.epSquare >= 0

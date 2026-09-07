@@ -4,21 +4,18 @@ classdef Piesa < handle
         pozitie % [coloana, linie] 0-based
         imagine
         fig
-    end
-
-    properties (Constant)
-        % Must match Sah board axes: Position [48,50,800,800] → 100px squares
-        BOARD_LEFT = 48
-        BOARD_BOTTOM = 50
-        SQUARE = 100
-        PIECE = 88   % centered in square with 6px padding on each side
+        layout  % struct: left, bottom, square, piece
     end
 
     methods
-        function obj = Piesa(tip, pozitie, fig)
+        function obj = Piesa(tip, pozitie, fig, layout)
             obj.tip = tip;
             obj.pozitie = pozitie;
             obj.fig = fig;
+            if nargin < 4 || isempty(layout)
+                layout = struct('left', 48, 'bottom', 50, 'square', 100, 'piece', 88);
+            end
+            obj.layout = layout;
 
             img = obj.resolveImagePath(obj.getImagine(tip));
             obj.imagine = uiimage(fig, 'ImageSource', img, ...
@@ -43,16 +40,23 @@ classdef Piesa < handle
             end
         end
 
-        function rect = pixelRect(~, poz)
-            % Center piece sprite inside its board square (same for all ranks)
-            pad = (Piesa.SQUARE - Piesa.PIECE) / 2;
-            x = Piesa.BOARD_LEFT + Piesa.SQUARE * poz(1) + pad;
-            y = Piesa.BOARD_BOTTOM + Piesa.SQUARE * poz(2) + pad;
-            rect = [x, y, Piesa.PIECE, Piesa.PIECE];
+        function setLayout(obj, layout)
+            obj.layout = layout;
+            if ~isempty(obj.imagine) && isvalid(obj.imagine)
+                obj.imagine.Position = obj.pixelRect(obj.pozitie);
+            end
+        end
+
+        function rect = pixelRect(obj, poz)
+            L = obj.layout;
+            pad = (L.square - L.piece) / 2;
+            x = L.left + L.square * poz(1) + pad;
+            y = L.bottom + L.square * poz(2) + pad;
+            rect = [x, y, L.piece, L.piece];
         end
 
         function muta(obj, mousePos)
-            d = Piesa.PIECE;
+            d = obj.layout.piece;
             obj.imagine.Position = [mousePos(1) - d/2, mousePos(2) - d/2, d, d];
         end
 
