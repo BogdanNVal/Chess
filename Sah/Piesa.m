@@ -55,8 +55,19 @@ classdef Piesa < handle
 
         function promoveaza(obj, tipNou)
             obj.tip = tipNou;
-            if isvalid(obj.imagine)
-                obj.imagine.ImageSource = obj.getImagine(tipNou);
+            img = obj.getImagine(tipNou);
+            if isempty(img)
+                return;
+            end
+            % Resolve path relative to this class file so ImageSource
+            % still works if Current Folder changed during the dialog.
+            classDir = fileparts(mfilename('fullpath'));
+            imgPath = fullfile(classDir, img);
+            if ~isfile(imgPath)
+                imgPath = img; % fallback to relative
+            end
+            if ~isempty(obj.imagine) && isvalid(obj.imagine)
+                obj.imagine.ImageSource = imgPath;
             end
         end
 

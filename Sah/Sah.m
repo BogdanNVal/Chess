@@ -274,6 +274,11 @@ classdef Sah < handle
             mutare = matches(1, :);
             if matches(1, 5) == 4
                 promo = obj.dialogPromovare(obj.piesaSelectata.tip);
+                % Ensure main window stays visible after modal dialog
+                if isvalid(obj.fig)
+                    obj.fig.Visible = 'on';
+                    drawnow;
+                end
                 if promo == 0
                     obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
                     return;
@@ -408,19 +413,35 @@ classdef Sah < handle
         end
 
         function promo = dialogPromovare(obj, tipPion)
-            isBlack = isstrprop(tipPion, 'lower');
-            opts = {'Dama', 'Tura', 'Nebun', 'Cal'};
-            [idx, tf] = listdlg('ListString', opts, 'SelectionMode', 'single', ...
-                'Name', 'Promovare', 'PromptString', 'Alege piesa:', ...
-                'ListSize', [200, 100]);
-            if ~tf
+            % uiconfirm (not listdlg): listdlg is a Java dialog and can hide
+            % or break the parent uifigure after the user picks an option.
+            opts = {'Dama', 'Tura', 'Nebun', 'Cal', 'Anulează'};
+            try
+                choice = uiconfirm(obj.fig, 'Alege piesa în care se promovează pionul:', ...
+                    'Promovare', ...
+                    'Options', opts, ...
+                    'DefaultOption', 1, ...
+                    'CancelOption', 5, ...
+                    'Icon', 'question');
+            catch
+                % Fallback if uiconfirm unavailable: auto-queen without dialog
+                choice = 'Dama';
+            end
+
+            if isempty(choice) || strcmp(choice, 'Anulează')
                 promo = 0;
                 return;
             end
-            map = [5, 4, 3, 2];
-            promo = map(idx);
-            %#ok<*NASGU>
-            isBlack;
+
+            switch choice
+                case 'Dama', promo = 5;
+                case 'Tura', promo = 4;
+                case 'Nebun', promo = 3;
+                case 'Cal', promo = 2;
+                otherwise, promo = 0;
+            end
+            %#ok<*INUSD>
+            tipPion;
         end
 
         function tip = tipDinValoare(~, v, isBlack)
