@@ -240,6 +240,17 @@ classdef Sah < handle
             end
         end
 
+        function pt = pointerInAxes(obj)
+            % Conversie din pixeli figură → coordonate de date (fiabil pe uifigure).
+            cp = obj.fig.CurrentPoint;
+            ip = obj.ax.InnerPosition;
+            xLim = obj.ax.XLim;
+            yLim = obj.ax.YLim;
+            x = xLim(1) + (cp(1) - ip(1)) / ip(3) * (xLim(2) - xLim(1));
+            y = yLim(1) + (cp(2) - ip(2)) / ip(4) * (yLim(2) - yLim(1));
+            pt = [x, y];
+        end
+
         function startDrag(obj, ~)
             if ~obj.finalizat || obj.thinking
                 obj.piesaSelectata = {};
@@ -247,15 +258,15 @@ classdef Sah < handle
                 return;
             end
 
-            mousePos = obj.ax.CurrentPoint(1, 1:2);
+            mousePos = obj.pointerInAxes();
             [coloana, linie] = obj.mouseToSquare(mousePos);
             if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                 obj.piesaSelectata = obj.tabla{linie, coloana};
                 if isa(obj.piesaSelectata, 'Piesa') && obj.estePiesaLaMutare(obj.piesaSelectata)
                     obj.moveflag = true;
+                    obj.arataMutariLegale((linie-1)*8 + (coloana-1));
+                    obj.piesaSelectata.aduInFata();
                     obj.piesaSelectata.muta(mousePos);
-                    from = (linie-1)*8 + (coloana-1);
-                    obj.arataMutariLegale(from);
                     return;
                 end
             end
@@ -281,8 +292,8 @@ classdef Sah < handle
                 return;
             end
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
-                mousePos = obj.ax.CurrentPoint(1, 1:2);
-                obj.piesaSelectata.muta(mousePos);
+                obj.piesaSelectata.muta(obj.pointerInAxes());
+                drawnow limitrate;
             end
         end
 
@@ -296,12 +307,12 @@ classdef Sah < handle
             end
             success = false;
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
-                mousePos = obj.ax.CurrentPoint(1, 1:2);
+                mousePos = obj.pointerInAxes();
                 [coloana, linie] = obj.mouseToSquare(mousePos);
 
                 if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                     success = obj.mutareUtilizator(linie, coloana);
-                    drawnow expose;
+                    drawnow limitrate;
                 else
                     obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
                 end
@@ -313,7 +324,7 @@ classdef Sah < handle
             if success && obj.finalizat && ~obj.thinking && ...
                     isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1
                 pause(0.05);
-                drawnow;
+                drawnow limitrate;
                 obj.mutareRobot();
             end
         end
@@ -572,7 +583,6 @@ classdef Sah < handle
                 obj.evidentiereLegale(end+1) = h;
             end
             hold(obj.ax, 'off');
-            obj.ridicaPiese();
         end
 
         function stergeEvidentiereLegale(obj)
@@ -593,7 +603,6 @@ classdef Sah < handle
                     'HitTest', 'off', 'PickableParts', 'none');
                 obj.evidentiere(end+1) = h;
             end
-            obj.ridicaPiese();
         end
 
         function stergeEvidentiere(obj)
@@ -620,7 +629,9 @@ classdef Sah < handle
                             'r', 'FaceAlpha', 0.4, 'EdgeColor', 'none', ...
                             'HitTest', 'off', 'PickableParts', 'none');
                         hold(obj.ax, 'off');
-                        obj.ridicaPiese();
+                        if isvalid(piesa.imagine)
+                            uistack(piesa.imagine, 'top');
+                        end
                         return;
                     end
                 end
@@ -630,17 +641,6 @@ classdef Sah < handle
         function clearCheckHighlight(obj)
             if isgraphics(obj.patraticaRege)
                 delete(obj.patraticaRege);
-            end
-        end
-
-        function ridicaPiese(obj)
-            for i = 1:8
-                for j = 1:8
-                    piesa = obj.tabla{i, j};
-                    if isa(piesa, 'Piesa') && ~isempty(piesa.imagine) && isvalid(piesa.imagine)
-                        uistack(piesa.imagine, 'top');
-                    end
-                end
             end
         end
 
@@ -663,7 +663,9 @@ classdef Sah < handle
                             'r', 'FaceAlpha', 0.7, 'EdgeColor', 'none', ...
                             'HitTest', 'off', 'PickableParts', 'none');
                         hold(obj.ax, 'off');
-                        obj.ridicaPiese();
+                        if isvalid(piesa.imagine)
+                            uistack(piesa.imagine, 'top');
+                        end
                         break;
                     end
                 end

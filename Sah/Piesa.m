@@ -7,7 +7,8 @@ classdef Piesa < handle
     end
 
     properties (Constant)
-        PAD = 0.14  % ~72% din pătrat, padding egal
+        PAD = 0.14      % ~72% din pătrat
+        MAX_IMG = 96    % downscale pentru redare fluentă
     end
 
     methods
@@ -46,8 +47,7 @@ classdef Piesa < handle
         end
 
         function [xd, yd] = dataRect(~, poz)
-            % Cu YDir=normal, image mapează primul rând CData la YData(1).
-            % Punem YData descrescător ca vârful piesei să fie sus în pătrat.
+            % YData descrescător: vârful piesei rămâne sus (YDir=normal).
             p = Piesa.PAD;
             c = poz(1);
             l = poz(2);
@@ -56,13 +56,18 @@ classdef Piesa < handle
         end
 
         function muta(obj, mousePos)
-            % mousePos = [x, y] în coordonate de date pe axes
+            % Doar mută XData/YData — fără uistack (foarte costisitor per frame).
             half = (1 - 2 * Piesa.PAD) / 2;
             x = mousePos(1);
             y = mousePos(2);
             obj.imagine.XData = [x - half, x + half];
             obj.imagine.YData = [y + half, y - half];
-            uistack(obj.imagine, 'top');
+        end
+
+        function aduInFata(obj)
+            if ~isempty(obj.imagine) && isvalid(obj.imagine)
+                uistack(obj.imagine, 'top');
+            end
         end
 
         function mutaLaNouaPozitie(obj, poz)
@@ -70,7 +75,6 @@ classdef Piesa < handle
             [xd, yd] = obj.dataRect(poz);
             obj.imagine.XData = xd;
             obj.imagine.YData = yd;
-            drawnow expose;
         end
 
         function promoveaza(obj, tipNou)
@@ -86,6 +90,17 @@ classdef Piesa < handle
         end
 
         function [cdata, alpha] = loadImage(obj, tip)
+            persistent cache
+            if isempty(cache)
+                cache = containers.Map();
+            end
+            if isKey(cache, tip)
+                entry = cache(tip);
+                cdata = entry.cdata;
+                alpha = entry.alpha;
+                return;
+            end
+
             rel = obj.getImagine(tip);
             path = obj.resolveImagePath(rel);
             if isempty(path)
@@ -102,6 +117,16 @@ classdef Piesa < handle
             elseif ~isa(alpha, 'double')
                 alpha = double(alpha) / 255;
             end
+
+            [h, w, ~] = size(cdata);
+            scale = Piesa.MAX_IMG / max(h, w);
+            if scale < 1
+                newSize = [max(1, round(h * scale)), max(1, round(w * scale))];
+                cdata = imresize(cdata, newSize);
+                alpha = imresize(alpha, newSize);
+            end
+
+            cache(tip) = struct('cdata', cdata, 'alpha', alpha);
         end
 
         function path = resolveImagePath(~, rel)
