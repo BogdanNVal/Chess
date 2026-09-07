@@ -189,8 +189,7 @@ classdef Sah < handle
             end
 
             mousePos = obj.fig.CurrentPoint;
-            coloana = floor((mousePos(1) - 60)/98) + 1;
-            linie = floor((mousePos(2) - 66)/98) + 1;
+            [coloana, linie] = obj.mouseToSquare(mousePos);
             if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                 obj.piesaSelectata = obj.tabla{linie, coloana};
                 if isa(obj.piesaSelectata, 'Piesa')
@@ -223,33 +222,40 @@ classdef Sah < handle
                 obj.moveflag = false;
                 return;
             end
+            success = false;
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
                 mousePos = obj.fig.CurrentPoint;
-                coloana = floor((mousePos(1) - 60)/98) + 1;
-                linie = floor((mousePos(2) - 66)/98) + 1;
+                [coloana, linie] = obj.mouseToSquare(mousePos);
 
                 if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
-                    obj.mutareUtilizator(linie, coloana);
+                    success = obj.mutareUtilizator(linie, coloana);
                     drawnow expose;
-                    obj.mutareEfectuata = true;
                 else
                     obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
                 end
             end
             obj.piesaSelectata = {};
             obj.moveflag = false;
+            obj.mutareEfectuata = success;
 
-            if isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1 && obj.mutareEfectuata == true
+            % Only let the robot move if the user succeeded and the game is still on
+            if success && obj.finalizat && isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1
                 pause(0.05);
                 drawnow;
                 obj.mutareRobot();
-                obj.finalizat = true;
             end
+        end
+
+        function [coloana, linie] = mouseToSquare(~, mousePos)
+            % Must match Piesa layout: origin (63,66), stride 98
+            coloana = floor((mousePos(1) - 63)/98) + 1;
+            linie = floor((mousePos(2) - 66)/98) + 1;
         end
     end
 
     methods
-        function mutareUtilizator(obj, linie, coloana)
+        function ok = mutareUtilizator(obj, linie, coloana)
+            ok = false;
             obj.mutareEfectuata = false;
             from = obj.piesaSelectata.pozitie(2) * 8 + obj.piesaSelectata.pozitie(1);
             to = (linie - 1) * 8 + coloana - 1;
@@ -280,26 +286,34 @@ classdef Sah < handle
                 end
             end
 
-            ok = obj.joc.realizeazaMutare(mutare);
-            if ok
+            moved = obj.joc.realizeazaMutare(mutare);
+            if moved
                 obj.aplicaMutareUI(obj.joc.ultimaMutare);
                 obj.actualizeazaStareJoc();
+                ok = true;
             else
                 obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
             end
         end
 
         function mutareRobot(obj)
-            obj.finalizat = false;
+            if ~obj.finalizat
+                return;
+            end
+            obj.finalizat = false; % lock UI while thinking
             obj.setStatus(sprintf('Robotul se gândește… (max ~%.0fs)', obj.joc.adversar.logic.timeLimit));
             drawnow;
             mutare = obj.joc.realizeazaMutare();
             obj.setStatus('');
             if isequal(mutare, 0) || isempty(mutare)
+                obj.finalizat = true;
                 return;
             end
             obj.aplicaMutareUI(obj.joc.ultimaMutare);
-            obj.actualizeazaStareJoc();
+            gameOver = obj.actualizeazaStareJoc();
+            if ~gameOver
+                obj.finalizat = true;
+            end
         end
 
         function aplicaMutareUI(obj, full)
@@ -376,11 +390,14 @@ classdef Sah < handle
             tura.mutaLaNouaPozitie([toCol - 1, toLin - 1]);
         end
 
-        function actualizeazaStareJoc(obj)
+        function gameOver = actualizeazaStareJoc(obj)
+            gameOver = false;
             if obj.joc.logic.sahMat()
                 obj.afiseazaSahMat(~obj.joc.rand);
+                gameOver = true;
             elseif obj.joc.logic.pat()
                 obj.afiseazaPat();
+                gameOver = true;
             else
                 if obj.joc.logic.sah()
                     obj.EvidentiereRegeInSah(obj.joc.rand);

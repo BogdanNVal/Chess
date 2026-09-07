@@ -17,7 +17,7 @@ classdef Piesa < handle
             y = 66;
             img = obj.getImagine(tip);
             obj.imagine = uiimage(fig, 'ImageSource', img, ...
-                'Position', [x + l * pozitie(1), y + 97 * pozitie(2), l, l]);
+                'Position', [x + l * pozitie(1), y + l * pozitie(2), l, l]);
         end
 
         function img = getImagine(~, c)
@@ -49,7 +49,7 @@ classdef Piesa < handle
             l = 98;
             x = 63;
             y = 66;
-            obj.imagine.Position = [x + l * poz(1), y + 97 * poz(2), l, l];
+            obj.imagine.Position = [x + l * poz(1), y + l * poz(2), l, l];
             drawnow expose;
         end
 

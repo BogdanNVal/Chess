@@ -9,7 +9,7 @@ classdef Engine < handle
         killers
         nodes
         bestMoveRoot
-        timeLimit = 3.5   % seconds soft cap per move
+        timeLimit = 3.5
         startTime
         timedOut
     end
@@ -19,8 +19,8 @@ classdef Engine < handle
         FLAG_EXACT = 0
         FLAG_LOWER = 1
         FLAG_UPPER = 2
-        QMAX = 5          % max quiescence ply
-        NULL_R = 2        % null-move reduction
+        QMAX = 5
+        NULL_R = 2
     end
 
     methods
@@ -47,28 +47,38 @@ classdef Engine < handle
             maximizing = ~f;
             lastScore = 0;
 
+            % Always keep a legal fallback
+            obj.mutari.generareMutari();
+            if obj.mutari.numarMutariPosibile > 0
+                mutareOptima = obj.mutari.toateMutarile(1, :);
+                obj.bestMoveRoot = mutareOptima;
+            end
+
             for depth = 1:obj.adancime
                 if toc(obj.startTime) > obj.timeLimit
                     break;
                 end
-                % Aspiration window around previous score
+                obj.timedOut = false;
                 if depth >= 3
                     alpha = lastScore - 50;
                     beta = lastScore + 50;
                     [scor, best] = obj.searchRoot(depth, maximizing, alpha, beta);
-                    if ~isempty(best) && (scor <= alpha || scor >= beta)
+                    if ~obj.timedOut && ~isempty(best) && (scor <= alpha || scor >= beta)
                         [scor, best] = obj.searchRoot(depth, maximizing, -inf, inf);
                     end
                 else
                     [scor, best] = obj.searchRoot(depth, maximizing, -inf, inf);
                 end
-                if obj.timedOut
-                    break;
-                end
-                if ~isempty(best)
+                if ~isempty(best) && ~obj.timedOut
                     mutareOptima = best;
                     obj.bestMoveRoot = best;
                     lastScore = scor;
+                elseif ~isempty(best) && isempty(obj.bestMoveRoot)
+                    mutareOptima = best;
+                    obj.bestMoveRoot = best;
+                end
+                if obj.timedOut
+                    break;
                 end
             end
 
@@ -103,6 +113,9 @@ classdef Engine < handle
                 obj.mutari.bitboard.actualizareTabla(moves(i, :));
                 val = obj.alphabeta(depth - 1, alpha, beta, 1, true);
                 obj.mutari.bitboard.anulareMutare(moves(i, :));
+                if obj.timedOut
+                    break;
+                end
                 obj.nodes = obj.nodes + 1;
 
                 if maximizing
@@ -134,6 +147,7 @@ classdef Engine < handle
 
             [found, ttDepth, ttScore, ttFlag, ttMove] = obj.tt.probe(key);
             if found && ttDepth >= depth
+                ttScore = obj.scoreFromTT(ttScore, ply);
                 if ttFlag == Engine.FLAG_EXACT
                     scor = ttScore; return;
                 elseif ttFlag == Engine.FLAG_LOWER
@@ -146,18 +160,20 @@ classdef Engine < handle
                 end
             end
 
-            if depth == 0
-                scor = obj.quiescence(alpha, beta, 0);
+            if depth <= 0
+                scor = obj.quiescence(alpha, beta, 0, ply);
                 return;
             end
 
             inCheck = obj.mutari.sah();
 
-            % Null-move pruning
             if allowNull && ~inCheck && depth >= 3
                 obj.mutari.bitboard.nullMoveBegin();
                 nullScore = obj.alphabeta(depth - 1 - Engine.NULL_R, alpha, beta, ply + 1, false);
                 obj.mutari.bitboard.nullMoveEnd();
+                if obj.timedOut
+                    scor = nullScore; return;
+                end
                 maximizing = ~bitget(obj.mutari.bitboard.flags, 1);
                 if maximizing && nullScore >= beta
                     scor = beta; return;
@@ -169,16 +185,7 @@ classdef Engine < handle
             obj.mutari.generareMutari();
             nr = obj.mutari.numarMutariPosibile;
             if nr == 0
-                if inCheck
-                    f = bitget(obj.mutari.bitboard.flags, 1);
-                    if f
-                        scor = Engine.MATE - ply;
-                    else
-                        scor = -Engine.MATE + ply;
-                    end
-                else
-                    scor = 0;
-                end
+                scor = obj.terminalScore(inCheck, ply);
                 return;
             end
 
@@ -194,16 +201,18 @@ classdef Engine < handle
                 scor = -inf;
                 for i = 1:size(moves, 1)
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
-                    % Late move reduction for quiet late moves
                     red = 0;
                     if depth >= 3 && i > 4 && moves(i, 4) == 0 && moves(i, 5) == 0 && ~inCheck
                         red = 1;
                     end
                     val = obj.alphabeta(depth - 1 - red, alpha, beta, ply + 1, true);
-                    if red && val > alpha
+                    if red && ~obj.timedOut && val > alpha
                         val = obj.alphabeta(depth - 1, alpha, beta, ply + 1, true);
                     end
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if obj.timedOut
+                        return;
+                    end
                     if val > scor
                         scor = val;
                         bestMove = moves(i, :);
@@ -223,10 +232,13 @@ classdef Engine < handle
                         red = 1;
                     end
                     val = obj.alphabeta(depth - 1 - red, alpha, beta, ply + 1, true);
-                    if red && val < beta
+                    if red && ~obj.timedOut && val < beta
                         val = obj.alphabeta(depth - 1, alpha, beta, ply + 1, true);
                     end
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if obj.timedOut
+                        return;
+                    end
                     if val < scor
                         scor = val;
                         bestMove = moves(i, :);
@@ -239,6 +251,10 @@ classdef Engine < handle
                 end
             end
 
+            if obj.timedOut
+                return;
+            end
+
             if scor <= alphaOrig
                 flag = Engine.FLAG_UPPER;
             elseif scor >= beta
@@ -246,11 +262,46 @@ classdef Engine < handle
             else
                 flag = Engine.FLAG_EXACT;
             end
-            obj.tt.store(key, depth, scor, flag, bestMove);
+            obj.tt.store(key, depth, obj.scoreToTT(scor, ply), flag, bestMove);
         end
 
-        function scor = quiescence(obj, alpha, beta, qply)
+        function scor = quiescence(obj, alpha, beta, qply, ply)
             obj.nodes = obj.nodes + 1;
+            inCheck = obj.mutari.sah();
+
+            % In check: must explore all escapes; never stand-pat
+            if inCheck
+                obj.mutari.generareMutari();
+                moves = obj.mutari.toateMutarile;
+                nr = obj.mutari.numarMutariPosibile;
+                if nr == 0
+                    scor = obj.terminalScore(true, ply);
+                    return;
+                end
+                maximizing = ~bitget(obj.mutari.bitboard.flags, 1);
+                if maximizing
+                    scor = -inf;
+                else
+                    scor = inf;
+                end
+                for i = 1:nr
+                    obj.mutari.bitboard.actualizareTabla(moves(i, :));
+                    val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
+                    obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if maximizing
+                        scor = max(scor, val);
+                        alpha = max(alpha, scor);
+                    else
+                        scor = min(scor, val);
+                        beta = min(beta, scor);
+                    end
+                    if alpha >= beta
+                        break;
+                    end
+                end
+                return;
+            end
+
             standPat = obj.mutari.bitboard.evaluareTabla();
             maximizing = ~bitget(obj.mutari.bitboard.flags, 1);
 
@@ -287,7 +338,7 @@ classdef Engine < handle
                 scor = standPat;
                 for i = 1:nr
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
-                    val = obj.quiescence(alpha, beta, qply + 1);
+                    val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
                     scor = max(scor, val);
                     alpha = max(alpha, scor);
@@ -299,7 +350,7 @@ classdef Engine < handle
                 scor = standPat;
                 for i = 1:nr
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
-                    val = obj.quiescence(alpha, beta, qply + 1);
+                    val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
                     scor = min(scor, val);
                     beta = min(beta, scor);
@@ -307,6 +358,39 @@ classdef Engine < handle
                         break;
                     end
                 end
+            end
+        end
+
+        function scor = terminalScore(obj, inCheck, ply)
+            if inCheck
+                f = bitget(obj.mutari.bitboard.flags, 1);
+                if f
+                    scor = Engine.MATE - ply;
+                else
+                    scor = -Engine.MATE + ply;
+                end
+            else
+                scor = 0;
+            end
+        end
+
+        function s = scoreToTT(~, score, ply)
+            if score > Engine.MATE / 2
+                s = score + ply;
+            elseif score < -Engine.MATE / 2
+                s = score - ply;
+            else
+                s = score;
+            end
+        end
+
+        function s = scoreFromTT(~, score, ply)
+            if score > Engine.MATE / 2
+                s = score - ply;
+            elseif score < -Engine.MATE / 2
+                s = score + ply;
+            else
+                s = score;
             end
         end
 

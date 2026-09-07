@@ -34,6 +34,9 @@ quiescence search, and a transposition table.
 - **MVV-LVA** move ordering + killer moves + TT move first
 - **Transposition table** with Zobrist hashing
 - Evaluation: **material** (incremental) + **piece-square tables**
+  (stronger center bonuses so openings prefer d4/e4 and developed knights)
+- Soft **time limit** (~3.5s/move): iterative deepening stops early so deep
+  settings stay responsive
 
 ## Tech stack
 
