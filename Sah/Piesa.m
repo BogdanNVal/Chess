@@ -1,31 +1,28 @@
 classdef Piesa < handle
     properties
         tip
-        pozitie  % [coloana, linie] 0-based
+        pozitie % [coloana, linie] 0-based
         imagine
-        ax
-    end
-
-    properties (Constant)
-        PAD = 0.14      % ~72% din pătrat
-        MAX_IMG = 96    % downscale pentru redare fluentă
+        fig
+        layout  % struct: left, bottom, square, piece
     end
 
     methods
-        function obj = Piesa(tip, pozitie, ax)
+        function obj = Piesa(tip, pozitie, fig, layout)
             obj.tip = tip;
             obj.pozitie = pozitie;
-            obj.ax = ax;
+            obj.fig = fig;
+            if nargin < 4 || isempty(layout)
+                layout = struct( ...
+                    'left', 48, 'bottom', 50, ...
+                    'squareX', 100, 'squareY', 100, ...
+                    'pieceX', 78, 'pieceY', 78);
+            end
+            obj.layout = obj.normalizeLayout(layout);
 
-            hold(ax, 'on');
-            [cdata, alpha] = obj.loadImage(tip);
-            [xd, yd] = obj.dataRect(pozitie);
-            obj.imagine = image(ax, 'CData', cdata, ...
-                'XData', xd, 'YData', yd, ...
-                'AlphaData', alpha, ...
-                'AlphaDataMapping', 'none', ...
-                'HitTest', 'off', ...
-                'PickableParts', 'none');
+            img = obj.resolveImagePath(obj.getImagine(tip));
+            obj.imagine = uiimage(fig, 'ImageSource', img, ...
+                'Position', obj.pixelRect(pozitie));
         end
 
         function img = getImagine(~, c)
@@ -46,87 +43,73 @@ classdef Piesa < handle
             end
         end
 
-        function [xd, yd] = dataRect(~, poz)
-            % YData descrescător: vârful piesei rămâne sus (YDir=normal).
-            p = Piesa.PAD;
-            c = poz(1);
-            l = poz(2);
-            xd = [c + p, c + 1 - p];
-            yd = [l + 1 - p, l + p];
+        function setLayout(obj, layout)
+            obj.layout = obj.normalizeLayout(layout);
+            if ~isempty(obj.imagine) && isvalid(obj.imagine)
+                obj.imagine.Position = obj.pixelRect(obj.pozitie);
+            end
+        end
+
+        function layout = normalizeLayout(~, layout)
+            % Accept legacy square/piece fields or explicit X/Y metrics.
+            if isfield(layout, 'squareX') && isfield(layout, 'squareY')
+                sqX = layout.squareX;
+                sqY = layout.squareY;
+            elseif isfield(layout, 'square')
+                sqX = layout.square;
+                sqY = layout.square;
+            else
+                sqX = 100; sqY = 100;
+            end
+            if isfield(layout, 'pieceX') && isfield(layout, 'pieceY')
+                pcX = layout.pieceX;
+                pcY = layout.pieceY;
+            elseif isfield(layout, 'piece')
+                pcX = layout.piece;
+                pcY = layout.piece;
+            else
+                pcX = round(sqX * 0.78);
+                pcY = round(sqY * 0.78);
+            end
+            left = 48; bottom = 50;
+            if isfield(layout, 'left'), left = layout.left; end
+            if isfield(layout, 'bottom'), bottom = layout.bottom; end
+            layout = struct( ...
+                'left', left, 'bottom', bottom, ...
+                'squareX', sqX, 'squareY', sqY, ...
+                'pieceX', pcX, 'pieceY', pcY);
+        end
+
+        function rect = pixelRect(obj, poz)
+            L = obj.layout;
+            padX = (L.squareX - L.pieceX) / 2;
+            padY = (L.squareY - L.pieceY) / 2;
+            x = L.left + L.squareX * poz(1) + padX;
+            y = L.bottom + L.squareY * poz(2) + padY;
+            rect = [x, y, L.pieceX, L.pieceY];
         end
 
         function muta(obj, mousePos)
-            % Doar mută XData/YData — fără uistack (foarte costisitor per frame).
-            half = (1 - 2 * Piesa.PAD) / 2;
-            x = mousePos(1);
-            y = mousePos(2);
-            obj.imagine.XData = [x - half, x + half];
-            obj.imagine.YData = [y + half, y - half];
-        end
-
-        function aduInFata(obj)
-            if ~isempty(obj.imagine) && isvalid(obj.imagine)
-                uistack(obj.imagine, 'top');
-            end
+            dx = obj.layout.pieceX;
+            dy = obj.layout.pieceY;
+            obj.imagine.Position = [mousePos(1) - dx/2, mousePos(2) - dy/2, dx, dy];
         end
 
         function mutaLaNouaPozitie(obj, poz)
             obj.pozitie = poz;
-            [xd, yd] = obj.dataRect(poz);
-            obj.imagine.XData = xd;
-            obj.imagine.YData = yd;
+            obj.imagine.Position = obj.pixelRect(poz);
+            drawnow expose;
         end
 
         function promoveaza(obj, tipNou)
             obj.tip = tipNou;
-            [cdata, alpha] = obj.loadImage(tipNou);
-            if isempty(cdata)
+            img = obj.resolveImagePath(obj.getImagine(tipNou));
+            if isempty(img)
                 return;
             end
             if ~isempty(obj.imagine) && isvalid(obj.imagine)
-                obj.imagine.CData = cdata;
-                obj.imagine.AlphaData = alpha;
+                obj.imagine.ImageSource = img;
             end
-        end
-
-        function [cdata, alpha] = loadImage(obj, tip)
-            persistent cache
-            if isempty(cache)
-                cache = containers.Map();
-            end
-            if isKey(cache, tip)
-                entry = cache(tip);
-                cdata = entry.cdata;
-                alpha = entry.alpha;
-                return;
-            end
-
-            rel = obj.getImagine(tip);
-            path = obj.resolveImagePath(rel);
-            if isempty(path)
-                cdata = [];
-                alpha = [];
-                return;
-            end
-            [cdata, ~, alpha] = imread(path);
-            if size(cdata, 3) == 1
-                cdata = repmat(cdata, 1, 1, 3);
-            end
-            if isempty(alpha)
-                alpha = ones(size(cdata, 1), size(cdata, 2));
-            elseif ~isa(alpha, 'double')
-                alpha = double(alpha) / 255;
-            end
-
-            [h, w, ~] = size(cdata);
-            scale = Piesa.MAX_IMG / max(h, w);
-            if scale < 1
-                newSize = [max(1, round(h * scale)), max(1, round(w * scale))];
-                cdata = imresize(cdata, newSize);
-                alpha = imresize(alpha, newSize);
-            end
-
-            cache(tip) = struct('cdata', cdata, 'alpha', alpha);
         end
 
         function path = resolveImagePath(~, rel)

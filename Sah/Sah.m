@@ -14,6 +14,7 @@ classdef Sah < handle
         statusLabel
         scoreTitleLabel
         scoreLabel
+        layout
         thinking = false
         gameGen = 0
     end
@@ -27,6 +28,7 @@ classdef Sah < handle
             obj.setareInterfata();
             obj.setareTabla();
             obj.deseneazaTabla();
+            obj.syncLayout();
             fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
             obj.joc = Joc(fen);
             obj.UtilizatorVsUtilizator();
@@ -62,6 +64,7 @@ classdef Sah < handle
             obj.tabla = cell(8, 8);
             fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
             obj.joc.reseteaza(fen);
+            obj.syncLayout();
             obj.FEN(fen);
             obj.actualizeazaScor();
         end
@@ -118,7 +121,6 @@ classdef Sah < handle
             obj.ax.YColor = 'none';
             obj.ax.XLim = [0, 8];
             obj.ax.YLim = [0, 8];
-            obj.ax.YDir = 'normal';
             obj.ax.DataAspectRatio = [1 1 1];
             obj.ax.PlotBoxAspectRatio = [1 1 1];
         end
@@ -133,8 +135,7 @@ classdef Sah < handle
                     end
                     x = [j - 1, j, j, j - 1];
                     y = [i - 1, i - 1, i, i];
-                    patch(obj.ax, x, y, culoare, 'EdgeColor', 'k', ...
-                        'HitTest', 'off', 'PickableParts', 'none');
+                    patch(obj.ax, x, y, culoare, 'EdgeColor', 'k');
                 end
             end
 
@@ -144,7 +145,6 @@ classdef Sah < handle
                 txt.FontWeight = 'bold';
                 txt.FontSize = 30;
                 txt.Color = [0.2, 0.2, 0.2];
-                txt.HitTest = 'off';
             end
             label = ["a", "b", "c", "d", "e", "f", "g", "h"];
             for i = 1:8
@@ -153,13 +153,35 @@ classdef Sah < handle
                 txt.FontWeight = 'bold';
                 txt.FontSize = 30;
                 txt.Color = [0.2, 0.2, 0.2];
-                txt.HitTest = 'off';
             end
-            hold(obj.ax, 'on');
+        end
+
+        function syncLayout(obj)
+            % Aliniază piesele (uiimage, pixeli) pe plot box-ul real, inclusiv letterbox DAR.
+            drawnow;
+            ip = obj.ax.InnerPosition;
+            if ip(3) <= ip(4)
+                plotW = ip(3);
+                plotH = ip(3);
+            else
+                plotW = ip(4);
+                plotH = ip(4);
+            end
+            left = ip(1) + (ip(3) - plotW) / 2;
+            bottom = ip(2) + (ip(4) - plotH) / 2;
+            sq = plotW / 8;
+            piece = round(sq * 0.78);
+            obj.layout = struct( ...
+                'left', left, ...
+                'bottom', bottom, ...
+                'squareX', sq, ...
+                'squareY', sq, ...
+                'pieceX', piece, ...
+                'pieceY', piece);
         end
 
         function adaugaPiesa(obj, coloana, linie, c)
-            p = Piesa(c, [coloana, linie], obj.ax);
+            p = Piesa(c, [coloana, linie], obj.fig, obj.layout);
             obj.tabla{linie+1, coloana+1} = p;
         end
 
@@ -240,29 +262,6 @@ classdef Sah < handle
             end
         end
 
-        function pt = pointerInAxes(obj)
-            % Pixeli figură → date, ținând cont de letterbox-ul DataAspectRatio.
-            cp = obj.fig.CurrentPoint;
-            ip = obj.ax.InnerPosition;
-            xLim = obj.ax.XLim;
-            yLim = obj.ax.YLim;
-            dataW = xLim(2) - xLim(1);
-            dataH = yLim(2) - yLim(1);
-            % Cu DAR [1 1 1], plot box-ul e cel mai mare pătrat (aspect date) în InnerPosition.
-            if ip(3) / dataW < ip(4) / dataH
-                plotW = ip(3);
-                plotH = ip(3) * (dataH / dataW);
-            else
-                plotH = ip(4);
-                plotW = ip(4) * (dataW / dataH);
-            end
-            left = ip(1) + (ip(3) - plotW) / 2;
-            bottom = ip(2) + (ip(4) - plotH) / 2;
-            x = xLim(1) + (cp(1) - left) / plotW * dataW;
-            y = yLim(1) + (cp(2) - bottom) / plotH * dataH;
-            pt = [x, y];
-        end
-
         function startDrag(obj, ~)
             if ~obj.finalizat || obj.thinking
                 obj.piesaSelectata = {};
@@ -270,15 +269,15 @@ classdef Sah < handle
                 return;
             end
 
-            mousePos = obj.pointerInAxes();
+            mousePos = obj.fig.CurrentPoint;
             [coloana, linie] = obj.mouseToSquare(mousePos);
             if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                 obj.piesaSelectata = obj.tabla{linie, coloana};
                 if isa(obj.piesaSelectata, 'Piesa') && obj.estePiesaLaMutare(obj.piesaSelectata)
                     obj.moveflag = true;
-                    obj.arataMutariLegale((linie-1)*8 + (coloana-1));
-                    obj.piesaSelectata.aduInFata();
                     obj.piesaSelectata.muta(mousePos);
+                    from = (linie-1)*8 + (coloana-1);
+                    obj.arataMutariLegale(from);
                     return;
                 end
             end
@@ -304,8 +303,8 @@ classdef Sah < handle
                 return;
             end
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
-                obj.piesaSelectata.muta(obj.pointerInAxes());
-                drawnow limitrate;
+                mousePos = obj.fig.CurrentPoint;
+                obj.piesaSelectata.muta(mousePos);
             end
         end
 
@@ -319,12 +318,12 @@ classdef Sah < handle
             end
             success = false;
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
-                mousePos = obj.pointerInAxes();
+                mousePos = obj.fig.CurrentPoint;
                 [coloana, linie] = obj.mouseToSquare(mousePos);
 
                 if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                     success = obj.mutareUtilizator(linie, coloana);
-                    drawnow limitrate;
+                    drawnow expose;
                 else
                     obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
                 end
@@ -336,19 +335,22 @@ classdef Sah < handle
             if success && obj.finalizat && ~obj.thinking && ...
                     isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1
                 pause(0.05);
-                drawnow limitrate;
+                drawnow;
                 obj.mutareRobot();
             end
         end
 
-        function [coloana, linie] = mouseToSquare(~, mousePos)
-            if mousePos(1) < 0 || mousePos(1) > 8 || mousePos(2) < 0 || mousePos(2) > 8
+        function [coloana, linie] = mouseToSquare(obj, mousePos)
+            L = obj.layout;
+            if mousePos(1) < L.left || mousePos(2) < L.bottom || ...
+                    mousePos(1) > L.left + 8 * L.squareX || ...
+                    mousePos(2) > L.bottom + 8 * L.squareY
                 coloana = 0;
                 linie = 0;
                 return;
             end
-            coloana = min(8, floor(mousePos(1)) + 1);
-            linie = min(8, floor(mousePos(2)) + 1);
+            coloana = min(8, floor((mousePos(1) - L.left) / L.squareX) + 1);
+            linie = min(8, floor((mousePos(2) - L.bottom) / L.squareY) + 1);
         end
     end
 
@@ -373,7 +375,7 @@ classdef Sah < handle
             mutare = matches(1, :);
             if matches(1, 5) == 4
                 promo = obj.dialogPromovare(obj.piesaSelectata.tip);
-                % Păstrează fereastra principală vizibilă după dialogul modal
+                % Ensure main window stays visible after modal dialog
                 if isvalid(obj.fig)
                     obj.fig.Visible = 'on';
                     drawnow;
@@ -423,7 +425,7 @@ classdef Sah < handle
                 return;
             end
             if isequal(mutare, 0) || isempty(mutare)
-                % Nicio mutare legală pentru robot: mat sau pat
+                % No legal move for robot: mate or stalemate
                 gameOver = obj.actualizeazaStareJoc();
                 if ~gameOver
                     obj.finalizat = true;
@@ -452,9 +454,9 @@ classdef Sah < handle
             piesa = obj.tabla{fromLin, fromCol};
 
             switch special
-                case 3 % en passant — scoate pionul capturat de pe alt pătrat
+                case 3 % en passant — remove captured pawn off-target
                     if bitget(obj.joc.logic.bitboard.flags, 1) == 0
-                        % după mutare, albul e la mutare => negrul tocmai a făcut EP
+                        % after move, white to move => black just moved EP
                         capLin = toLin + 1;
                     else
                         capLin = toLin - 1;
@@ -465,18 +467,18 @@ classdef Sah < handle
                         obj.tabla{capLin, capCol} = [];
                     end
 
-                case 1 % rocadă pe flancul regelui
+                case 1 % castle KS
                     if fromLin == 1
-                        obj.mutaTuraUI(1, 8, 1, 6); % h1→f1
+                        obj.mutaTuraUI(1, 8, 1, 6); % h1->f1
                     else
-                        obj.mutaTuraUI(8, 8, 8, 6); % h8→f8
+                        obj.mutaTuraUI(8, 8, 8, 6); % h8->f8
                     end
 
-                case 2 % rocadă pe flancul damei
+                case 2 % castle QS
                     if fromLin == 1
-                        obj.mutaTuraUI(1, 1, 1, 4); % a1→d1
+                        obj.mutaTuraUI(1, 1, 1, 4); % a1->d1
                     else
-                        obj.mutaTuraUI(8, 1, 8, 4); % a8→d8
+                        obj.mutaTuraUI(8, 1, 8, 4); % a8->d8
                     end
             end
 
@@ -530,8 +532,8 @@ classdef Sah < handle
         end
 
         function promo = dialogPromovare(obj, tipPion)
-            % uiconfirm (nu listdlg): listdlg e dialog Java și poate ascunde
-            % sau strica uifigure-ul părinte după ce utilizatorul alege.
+            % uiconfirm (not listdlg): listdlg is a Java dialog and can hide
+            % or break the parent uifigure after the user picks an option.
             opts = {'Damă', 'Turn', 'Nebun', 'Cal', 'Anulează'};
             try
                 choice = uiconfirm(obj.fig, 'Alege piesa în care se promovează pionul:', ...
@@ -541,7 +543,7 @@ classdef Sah < handle
                     'CancelOption', 5, ...
                     'Icon', 'question');
             catch
-                % Dacă uiconfirm lipsește: promovează automat la damă
+                % Fallback if uiconfirm unavailable: auto-queen without dialog
                 choice = 'Damă';
             end
 
@@ -597,8 +599,7 @@ classdef Sah < handle
                 h = patch(obj.ax, ...
                     [col+0.3, col+0.7, col+0.7, col+0.3], ...
                     [lin+0.3, lin+0.3, lin+0.7, lin+0.7], ...
-                    [0.2, 0.7, 0.3], 'FaceAlpha', 0.55, 'EdgeColor', 'none', ...
-                    'HitTest', 'off', 'PickableParts', 'none');
+                    [0.2, 0.7, 0.3], 'FaceAlpha', 0.55, 'EdgeColor', 'none');
                 obj.evidentiereLegale(end+1) = h;
             end
             hold(obj.ax, 'off');
@@ -618,14 +619,8 @@ classdef Sah < handle
                 lin = poz(2);
                 x = [col, col + 1, col + 1, col];
                 y = [lin, lin, lin + 1, lin + 1];
-                h = patch(obj.ax, x, y, [1, 1, 0], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
-                    'HitTest', 'off', 'PickableParts', 'none');
+                h = patch(obj.ax, x, y, [1, 1, 0], 'FaceAlpha', 0.3, 'EdgeColor', 'none');
                 obj.evidentiere(end+1) = h;
-                % Ridică doar piesele de pe cele două pătrate (nu toată tabla).
-                piesa = obj.tabla{lin + 1, col + 1};
-                if isa(piesa, 'Piesa')
-                    piesa.aduInFata();
-                end
             end
         end
 
@@ -650,12 +645,8 @@ classdef Sah < handle
                         hold(obj.ax, 'on');
                         obj.patraticaRege = patch(obj.ax, ...
                             [j - 1, j, j, j - 1], [i - 1, i - 1, i, i], ...
-                            'r', 'FaceAlpha', 0.4, 'EdgeColor', 'none', ...
-                            'HitTest', 'off', 'PickableParts', 'none');
+                            'r', 'FaceAlpha', 0.4, 'EdgeColor', 'none');
                         hold(obj.ax, 'off');
-                        if isvalid(piesa.imagine)
-                            uistack(piesa.imagine, 'top');
-                        end
                         return;
                     end
                 end
@@ -684,12 +675,8 @@ classdef Sah < handle
                         hold(obj.ax, 'on');
                         obj.patraticaRege = patch(obj.ax, ...
                             [j - 1, j, j, j - 1], [i - 1, i - 1, i, i], ...
-                            'r', 'FaceAlpha', 0.7, 'EdgeColor', 'none', ...
-                            'HitTest', 'off', 'PickableParts', 'none');
+                            'r', 'FaceAlpha', 0.7, 'EdgeColor', 'none');
                         hold(obj.ax, 'off');
-                        if isvalid(piesa.imagine)
-                            uistack(piesa.imagine, 'top');
-                        end
                         break;
                     end
                 end
