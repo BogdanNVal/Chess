@@ -1,6 +1,6 @@
 classdef Engine < handle
-    % Alpha-beta accelerat: iterative deepening, aspirație, null-move,
-    % quiescence limitată, TT, killers, buget de timp.
+    % Alpha-beta accelerat: adâncire iterativă, aspirație, mutare-nulă,
+    % căutare de liniștire limitată, TT, killers, buget de timp.
 
     properties
         adancime = 3
@@ -166,7 +166,7 @@ classdef Engine < handle
 
             inCheck = obj.mutari.sah();
 
-            % Null-move: sare în zugzwang probabil (fără material non-pion)
+            % Mutare-nulă: omitere în zugzwang probabil (fără material non-pion)
             if allowNull && ~inCheck && depth >= 3 && obj.hasNonPawnMaterial()
                 obj.mutari.bitboard.nullMoveBegin();
                 nullScore = obj.alphabeta(depth - 1 - Engine.NULL_R, alpha, beta, ply + 1, false);
@@ -393,7 +393,7 @@ classdef Engine < handle
         end
 
         function tf = hasNonPawnMaterial(obj)
-            % Doar partea la mutare: piesele adversarului nu trebuie să activeze null-move în zugzwang K+P.
+            % Doar partea la mutare: piesele adversarului nu trebuie să activeze mutarea-nulă în zugzwang K+P.
             bb = obj.mutari.bitboard;
             if bitget(bb.flags, 1)
                 tf = (bb.n | bb.b | bb.r | bb.q) ~= 0;

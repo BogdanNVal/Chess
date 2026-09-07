@@ -511,7 +511,7 @@ classdef Sah < handle
                     'CancelOption', 5, ...
                     'Icon', 'question');
             catch
-                % Fallback dacă uiconfirm lipsește: damă automat, fără dialog
+                % Dacă uiconfirm lipsește: promovează automat la damă
                 choice = 'Damă';
             end
 
@@ -567,7 +567,8 @@ classdef Sah < handle
                 h = patch(obj.ax, ...
                     [col+0.3, col+0.7, col+0.7, col+0.3], ...
                     [lin+0.3, lin+0.3, lin+0.7, lin+0.7], ...
-                    [0.2, 0.7, 0.3], 'FaceAlpha', 0.55, 'EdgeColor', 'none');
+                    [0.2, 0.7, 0.3], 'FaceAlpha', 0.55, 'EdgeColor', 'none', ...
+                    'HitTest', 'off', 'PickableParts', 'none');
                 obj.evidentiereLegale(end+1) = h;
             end
             hold(obj.ax, 'off');
