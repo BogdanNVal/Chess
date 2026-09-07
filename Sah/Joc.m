@@ -37,30 +37,42 @@ classdef Joc < handle
 
         function ok = realizeazaMutare(obj, varargin)
             if ~obj.rand
+                if nargin < 2 || isempty(varargin)
+                    ok = 0;
+                    return;
+                end
                 ok = muta(obj.utilizator, varargin{1});
                 if ok
                     obj.ultimaMutare = obj.utilizator.ultimaMutare;
-                end
-                if isa(obj.adversar, "Utilizator")
-                    obj.adversar.pozitieNoua();
+                    if isa(obj.adversar, "Utilizator")
+                        obj.adversar.pozitieNoua();
+                    end
+                    obj.rand = ~obj.rand;
                 end
             else
                 if isa(obj.adversar, "Utilizator")
+                    if nargin < 2 || isempty(varargin)
+                        ok = 0;
+                        return;
+                    end
                     ok = muta(obj.adversar, varargin{1});
                     if ok
                         obj.ultimaMutare = obj.adversar.ultimaMutare;
+                        obj.utilizator.pozitieNoua();
+                        obj.rand = ~obj.rand;
                     end
                 else
+                    % Robot: ignore any accidental UI move payload
                     ok = muta(obj.adversar);
-                    if ~isequal(ok, 0)
+                    if ~isequal(ok, 0) && ~isempty(ok)
                         obj.ultimaMutare = obj.adversar.lastMove;
+                        obj.utilizator.pozitieNoua();
+                        obj.rand = ~obj.rand;
+                    else
+                        ok = 0;
+                        obj.ultimaMutare = [];
                     end
                 end
-                obj.utilizator.pozitieNoua();
-            end
-
-            if ~isequal(ok, 0) && ~isempty(ok)
-                obj.rand = ~obj.rand;
             end
         end
     end

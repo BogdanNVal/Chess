@@ -12,6 +12,8 @@ classdef Sah < handle
         mutareEfectuata = true;
         finalizat = true;
         statusLabel
+        thinking = false
+        gameGen = 0
     end
 
     methods
@@ -37,7 +39,10 @@ classdef Sah < handle
             obj.stergeEvidentiere();
             obj.stergeEvidentiereLegale();
             obj.clearCheckHighlight();
+            obj.snapSelectedPiece();
             obj.finalizat = true;
+            obj.thinking = false;
+            obj.gameGen = obj.gameGen + 1;
             obj.mutareEfectuata = true;
             obj.moveflag = false;
             obj.piesaSelectata = {};
@@ -168,12 +173,18 @@ classdef Sah < handle
 
     methods (Access = private)
         function UtilizatorVsUtilizator(obj)
+            if obj.thinking
+                return;
+            end
             obj.reseteaza();
             obj.joc.seteazaAdversar('Utilizator');
             obj.setStatus('Mod: Utilizator vs Utilizator');
         end
 
         function UtilizatorVsRobot(obj, d)
+            if obj.thinking
+                return;
+            end
             obj.reseteaza();
             obj.joc.seteazaAdversar('Robot', d);
             obj.setStatus(sprintf('Mod: Utilizator vs Robot (adâncime %d)', d));
@@ -181,8 +192,14 @@ classdef Sah < handle
     end
 
     methods (Access = private)
+        function snapSelectedPiece(obj)
+            if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
+                obj.piesaSelectata.mutaLaNouaPozitie(obj.piesaSelectata.pozitie);
+            end
+        end
+
         function startDrag(obj, ~)
-            if ~obj.finalizat
+            if ~obj.finalizat || obj.thinking
                 obj.piesaSelectata = {};
                 obj.moveflag = false;
                 return;
@@ -205,8 +222,10 @@ classdef Sah < handle
         end
 
         function dragging(obj, ~)
-            if ~obj.finalizat
+            if ~obj.finalizat || obj.thinking
+                obj.snapSelectedPiece();
                 obj.piesaSelectata = {};
+                obj.moveflag = false;
                 return;
             end
             if obj.moveflag && isa(obj.piesaSelectata, 'Piesa')
@@ -217,7 +236,8 @@ classdef Sah < handle
 
         function stopDrag(obj, ~)
             obj.stergeEvidentiereLegale();
-            if ~obj.finalizat || ~isa(obj.piesaSelectata, 'Piesa')
+            if ~obj.finalizat || obj.thinking || ~isa(obj.piesaSelectata, 'Piesa')
+                obj.snapSelectedPiece();
                 obj.piesaSelectata = {};
                 obj.moveflag = false;
                 return;
@@ -238,8 +258,8 @@ classdef Sah < handle
             obj.moveflag = false;
             obj.mutareEfectuata = success;
 
-            % Only let the robot move if the user succeeded and the game is still on
-            if success && obj.finalizat && isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1
+            if success && obj.finalizat && ~obj.thinking && ...
+                    isa(obj.joc.adversar, 'Robot') && obj.joc.rand == 1
                 pause(0.05);
                 drawnow;
                 obj.mutareRobot();
@@ -247,7 +267,6 @@ classdef Sah < handle
         end
 
         function [coloana, linie] = mouseToSquare(~, mousePos)
-            % Must match Piesa layout: origin (63,66), stride 98
             coloana = floor((mousePos(1) - 63)/98) + 1;
             linie = floor((mousePos(2) - 66)/98) + 1;
         end
@@ -302,16 +321,30 @@ classdef Sah < handle
         end
 
         function mutareRobot(obj)
-            if ~obj.finalizat
+            if ~obj.finalizat || obj.thinking
                 return;
             end
-            obj.finalizat = false; % lock UI while thinking
+            gen = obj.gameGen;
+            obj.thinking = true;
+            obj.finalizat = false;
             obj.setStatus(sprintf('Robotul se gândește… (max ~%.0fs)', obj.joc.adversar.logic.timeLimit));
             drawnow;
+            if gen ~= obj.gameGen
+                obj.thinking = false;
+                return;
+            end
             mutare = obj.joc.realizeazaMutare();
             obj.setStatus('');
+            obj.thinking = false;
+            if gen ~= obj.gameGen
+                return;
+            end
             if isequal(mutare, 0) || isempty(mutare)
-                obj.finalizat = true;
+                % No legal move for robot: mate or stalemate
+                gameOver = obj.actualizeazaStareJoc();
+                if ~gameOver
+                    obj.finalizat = true;
+                end
                 return;
             end
             obj.aplicaMutareUI(obj.joc.ultimaMutare);

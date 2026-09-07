@@ -167,7 +167,8 @@ classdef Engine < handle
 
             inCheck = obj.mutari.sah();
 
-            if allowNull && ~inCheck && depth >= 3
+            % Null-move: skip in likely zugzwang (no non-pawn material)
+            if allowNull && ~inCheck && depth >= 3 && obj.hasNonPawnMaterial()
                 obj.mutari.bitboard.nullMoveBegin();
                 nullScore = obj.alphabeta(depth - 1 - Engine.NULL_R, alpha, beta, ply + 1, false);
                 obj.mutari.bitboard.nullMoveEnd();
@@ -200,11 +201,17 @@ classdef Engine < handle
             if maximizing
                 scor = -inf;
                 for i = 1:size(moves, 1)
-                    obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     red = 0;
                     if depth >= 3 && i > 4 && moves(i, 4) == 0 && moves(i, 5) == 0 && ~inCheck
-                        red = 1;
+                        % Don't reduce moves that give check
+                        obj.mutari.bitboard.actualizareTabla(moves(i, :));
+                        givesCheck = obj.mutari.sah();
+                        obj.mutari.bitboard.anulareMutare(moves(i, :));
+                        if ~givesCheck
+                            red = 1;
+                        end
                     end
+                    obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     val = obj.alphabeta(depth - 1 - red, alpha, beta, ply + 1, true);
                     if red && ~obj.timedOut && val > alpha
                         val = obj.alphabeta(depth - 1, alpha, beta, ply + 1, true);
@@ -226,11 +233,16 @@ classdef Engine < handle
             else
                 scor = inf;
                 for i = 1:size(moves, 1)
-                    obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     red = 0;
                     if depth >= 3 && i > 4 && moves(i, 4) == 0 && moves(i, 5) == 0 && ~inCheck
-                        red = 1;
+                        obj.mutari.bitboard.actualizareTabla(moves(i, :));
+                        givesCheck = obj.mutari.sah();
+                        obj.mutari.bitboard.anulareMutare(moves(i, :));
+                        if ~givesCheck
+                            red = 1;
+                        end
                     end
+                    obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     val = obj.alphabeta(depth - 1 - red, alpha, beta, ply + 1, true);
                     if red && ~obj.timedOut && val < beta
                         val = obj.alphabeta(depth - 1, alpha, beta, ply + 1, true);
@@ -267,10 +279,20 @@ classdef Engine < handle
 
         function scor = quiescence(obj, alpha, beta, qply, ply)
             obj.nodes = obj.nodes + 1;
+            if mod(obj.nodes, 1024) == 0 && toc(obj.startTime) > obj.timeLimit
+                obj.timedOut = true;
+                scor = obj.mutari.bitboard.evaluareTabla();
+                return;
+            end
+
             inCheck = obj.mutari.sah();
 
-            % In check: must explore all escapes; never stand-pat
+            % In check: explore escapes; never stand-pat. Cap depth to avoid hangs.
             if inCheck
+                if qply >= Engine.QMAX + 2
+                    scor = obj.mutari.bitboard.evaluareTabla();
+                    return;
+                end
                 obj.mutari.generareMutari();
                 moves = obj.mutari.toateMutarile;
                 nr = obj.mutari.numarMutariPosibile;
@@ -288,6 +310,9 @@ classdef Engine < handle
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if obj.timedOut
+                        scor = val; return;
+                    end
                     if maximizing
                         scor = max(scor, val);
                         alpha = max(alpha, scor);
@@ -340,6 +365,9 @@ classdef Engine < handle
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if obj.timedOut
+                        scor = val; return;
+                    end
                     scor = max(scor, val);
                     alpha = max(alpha, scor);
                     if alpha >= beta
@@ -352,6 +380,9 @@ classdef Engine < handle
                     obj.mutari.bitboard.actualizareTabla(moves(i, :));
                     val = obj.quiescence(alpha, beta, qply + 1, ply + 1);
                     obj.mutari.bitboard.anulareMutare(moves(i, :));
+                    if obj.timedOut
+                        scor = val; return;
+                    end
                     scor = min(scor, val);
                     beta = min(beta, scor);
                     if alpha >= beta
@@ -359,6 +390,11 @@ classdef Engine < handle
                     end
                 end
             end
+        end
+
+        function tf = hasNonPawnMaterial(obj)
+            bb = obj.mutari.bitboard;
+            tf = (bb.N | bb.n | bb.B | bb.b | bb.R | bb.r | bb.Q | bb.q) ~= 0;
         end
 
         function scor = terminalScore(obj, inCheck, ply)

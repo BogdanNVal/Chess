@@ -142,23 +142,13 @@ classdef Mutari < handle
         end
 
         function bool = sahMat(obj)
-            % Caller may already have generated moves; still regenerate for safety
-            inCheck = obj.sah();
-            if ~inCheck
-                bool = false;
-                return;
-            end
             obj.generareMutari();
-            bool = obj.numarMutariPosibile == 0;
+            bool = obj.sah() && obj.numarMutariPosibile == 0;
         end
 
         function bool = pat(obj)
-            if obj.sah()
-                bool = false;
-                return;
-            end
             obj.generareMutari();
-            bool = obj.numarMutariPosibile == 0;
+            bool = ~obj.sah() && obj.numarMutariPosibile == 0;
         end
 
         function n = perft(obj, depth)
