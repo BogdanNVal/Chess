@@ -13,6 +13,7 @@ classdef Joc < handle
             obj.logic = Mutari(Bitboard(fen));
             obj.utilizator = Utilizator(obj.logic);
             obj.ultimaMutare = [];
+            obj.rand = bitget(obj.logic.bitboard.flags, 1);
             obj.start();
         end
 
@@ -28,6 +29,7 @@ classdef Joc < handle
             obj.logic = Mutari(Bitboard(fen));
             obj.utilizator.logic = obj.logic;
             obj.ultimaMutare = [];
+            obj.rand = bitget(obj.logic.bitboard.flags, 1);
             obj.start();
         end
 

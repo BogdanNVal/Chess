@@ -237,10 +237,19 @@ classdef Mutari < handle
                     obj.emitPionCaptures(from, capturi, f);
                 end
 
-                % En passant
+                % En passant — require an enemy pawn on the capture square
                 ep = obj.bitboard.epSquare;
                 if ep >= 0 && bitand(mask, bitshift(uint64(1), ep))
-                    obj.addMove([from, double(ep), 1, 1, 3, 0]);
+                    if f
+                        capSq = double(ep) + 8;
+                        enemyPawns = obj.bitboard.P;
+                    else
+                        capSq = double(ep) - 8;
+                        enemyPawns = obj.bitboard.p;
+                    end
+                    if bitand(enemyPawns, bitshift(uint64(1), capSq))
+                        obj.addMove([from, double(ep), 1, 1, 3, 0]);
+                    end
                 end
             end
         end

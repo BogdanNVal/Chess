@@ -140,7 +140,7 @@ classdef Bitboard < handle
             end
 
             obj.epSquare = int32(-1);
-            if numel(str) >= 4 && str{4} ~= '-'
+            if numel(str) >= 4 && ~strcmp(str{4}, '-')
                 obj.epSquare = int32(obj.algebraicToSquare(str{4}));
             end
 
@@ -414,15 +414,20 @@ classdef Bitboard < handle
 
         function removePieceBits(obj, tip, isBlack, sq)
             bit = bitshift(uint64(1), sq);
-            code = obj.pieceCode(tip, isBlack);
-            obj.(char(code)) = bitxor(obj.(char(code)), bit);
-            obj.tabla = bitxor(obj.tabla, bit);
+            code = char(obj.pieceCode(tip, isBlack));
+            % Clear bits (do not XOR): removing from an empty square must be a no-op
+            if bitand(obj.(code), bit) == 0
+                return;
+            end
+            mask = bitcmp(bit);
+            obj.(code) = bitand(obj.(code), mask);
+            obj.tabla = bitand(obj.tabla, mask);
             if isBlack
-                obj.pieseN = bitxor(obj.pieseN, bit);
+                obj.pieseN = bitand(obj.pieseN, mask);
                 obj.material = obj.material + int32(obj.pieceValue(tip));
                 obj.pstScore = obj.pstScore + obj.pst(tip, bitxor(sq, 56)+1);
             else
-                obj.pieseA = bitxor(obj.pieseA, bit);
+                obj.pieseA = bitand(obj.pieseA, mask);
                 obj.material = obj.material - int32(obj.pieceValue(tip));
                 obj.pstScore = obj.pstScore - obj.pst(tip, sq+1);
             end
@@ -431,8 +436,12 @@ classdef Bitboard < handle
 
         function placePieceBits(obj, tip, isBlack, sq)
             bit = bitshift(uint64(1), sq);
-            code = obj.pieceCode(tip, isBlack);
-            obj.(char(code)) = bitor(obj.(char(code)), bit);
+            code = char(obj.pieceCode(tip, isBlack));
+            % Already occupied by this piece type: avoid double-counting material/PST/zobrist
+            if bitand(obj.(code), bit) ~= 0
+                return;
+            end
+            obj.(code) = bitor(obj.(code), bit);
             obj.tabla = bitor(obj.tabla, bit);
             if isBlack
                 obj.pieseN = bitor(obj.pieseN, bit);

@@ -393,8 +393,13 @@ classdef Engine < handle
         end
 
         function tf = hasNonPawnMaterial(obj)
+            % Side-to-move only: opponent pieces must not enable null-move in K+P zugzwang.
             bb = obj.mutari.bitboard;
-            tf = (bb.N | bb.n | bb.B | bb.b | bb.R | bb.r | bb.Q | bb.q) ~= 0;
+            if bitget(bb.flags, 1)
+                tf = (bb.n | bb.b | bb.r | bb.q) ~= 0;
+            else
+                tf = (bb.N | bb.B | bb.R | bb.Q) ~= 0;
+            end
         end
 
         function scor = terminalScore(obj, inCheck, ply)

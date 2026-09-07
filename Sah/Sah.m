@@ -121,6 +121,8 @@ classdef Sah < handle
             obj.ax.YColor = 'none';
             obj.ax.XLim = [0, 8];
             obj.ax.YLim = [0, 8];
+            obj.ax.DataAspectRatio = [1 1 1];
+            obj.ax.PlotBoxAspectRatio = [1 1 1];
         end
 
         function deseneazaTabla(obj)
@@ -158,12 +160,15 @@ classdef Sah < handle
             % Plot box (InnerPosition) is the true board rectangle — not axes OuterPosition.
             drawnow;
             ip = obj.ax.InnerPosition;
-            sq = ip(3) / 8;
+            sqX = ip(3) / 8;
+            sqY = ip(4) / 8;
             obj.layout = struct( ...
                 'left', ip(1), ...
                 'bottom', ip(2), ...
-                'square', sq, ...
-                'piece', round(sq * 0.88));
+                'squareX', sqX, ...
+                'squareY', sqY, ...
+                'pieceX', round(sqX * 0.88), ...
+                'pieceY', round(sqY * 0.88));
         end
 
         function adaugaPiesa(obj, coloana, linie, c)
@@ -259,7 +264,7 @@ classdef Sah < handle
             [coloana, linie] = obj.mouseToSquare(mousePos);
             if coloana >= 1 && coloana <= 8 && linie >= 1 && linie <= 8
                 obj.piesaSelectata = obj.tabla{linie, coloana};
-                if isa(obj.piesaSelectata, 'Piesa')
+                if isa(obj.piesaSelectata, 'Piesa') && obj.estePiesaLaMutare(obj.piesaSelectata)
                     obj.moveflag = true;
                     obj.piesaSelectata.muta(mousePos);
                     from = (linie-1)*8 + (coloana-1);
@@ -267,8 +272,18 @@ classdef Sah < handle
                     return;
                 end
             end
+            obj.piesaSelectata = {};
             obj.stergeEvidentiereLegale();
             obj.moveflag = false;
+        end
+
+        function tf = estePiesaLaMutare(obj, piesa)
+            isBlack = isstrprop(piesa.tip, 'lower');
+            if obj.joc.rand == 0
+                tf = ~isBlack;
+            else
+                tf = isBlack;
+            end
         end
 
         function dragging(obj, ~)
@@ -318,8 +333,8 @@ classdef Sah < handle
 
         function [coloana, linie] = mouseToSquare(obj, mousePos)
             L = obj.layout;
-            coloana = floor((mousePos(1) - L.left) / L.square) + 1;
-            linie = floor((mousePos(2) - L.bottom) / L.square) + 1;
+            coloana = floor((mousePos(1) - L.left) / L.squareX) + 1;
+            linie = floor((mousePos(2) - L.bottom) / L.squareY) + 1;
         end
     end
 
