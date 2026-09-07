@@ -30,6 +30,13 @@ classdef Joc < handle
             obj.utilizator.logic = obj.logic;
             obj.ultimaMutare = [];
             obj.rand = bitget(obj.logic.bitboard.flags, 1);
+            % Releagă adversarul de noul Mutari (Robot ținea Engine pe tabla veche).
+            if isa(obj.adversar, 'Robot')
+                depth = obj.adversar.logic.adancime;
+                obj.adversar = Robot(obj.logic, depth);
+            elseif isa(obj.adversar, 'Utilizator')
+                obj.adversar.logic = obj.logic;
+            end
             obj.start();
         end
 

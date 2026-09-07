@@ -241,13 +241,25 @@ classdef Sah < handle
         end
 
         function pt = pointerInAxes(obj)
-            % Conversie din pixeli figură → coordonate de date (fiabil pe uifigure).
+            % Pixeli figură → date, ținând cont de letterbox-ul DataAspectRatio.
             cp = obj.fig.CurrentPoint;
             ip = obj.ax.InnerPosition;
             xLim = obj.ax.XLim;
             yLim = obj.ax.YLim;
-            x = xLim(1) + (cp(1) - ip(1)) / ip(3) * (xLim(2) - xLim(1));
-            y = yLim(1) + (cp(2) - ip(2)) / ip(4) * (yLim(2) - yLim(1));
+            dataW = xLim(2) - xLim(1);
+            dataH = yLim(2) - yLim(1);
+            % Cu DAR [1 1 1], plot box-ul e cel mai mare pătrat (aspect date) în InnerPosition.
+            if ip(3) / dataW < ip(4) / dataH
+                plotW = ip(3);
+                plotH = ip(3) * (dataH / dataW);
+            else
+                plotH = ip(4);
+                plotW = ip(4) * (dataW / dataH);
+            end
+            left = ip(1) + (ip(3) - plotW) / 2;
+            bottom = ip(2) + (ip(4) - plotH) / 2;
+            x = xLim(1) + (cp(1) - left) / plotW * dataW;
+            y = yLim(1) + (cp(2) - bottom) / plotH * dataH;
             pt = [x, y];
         end
 
@@ -330,8 +342,13 @@ classdef Sah < handle
         end
 
         function [coloana, linie] = mouseToSquare(~, mousePos)
-            coloana = floor(mousePos(1)) + 1;
-            linie = floor(mousePos(2)) + 1;
+            if mousePos(1) < 0 || mousePos(1) > 8 || mousePos(2) < 0 || mousePos(2) > 8
+                coloana = 0;
+                linie = 0;
+                return;
+            end
+            coloana = min(8, floor(mousePos(1)) + 1);
+            linie = min(8, floor(mousePos(2)) + 1);
         end
     end
 
@@ -395,12 +412,14 @@ classdef Sah < handle
             drawnow;
             if gen ~= obj.gameGen
                 obj.thinking = false;
+                obj.finalizat = true;
                 return;
             end
             mutare = obj.joc.realizeazaMutare();
             obj.setStatus('');
             obj.thinking = false;
             if gen ~= obj.gameGen
+                obj.finalizat = true;
                 return;
             end
             if isequal(mutare, 0) || isempty(mutare)
@@ -602,6 +621,11 @@ classdef Sah < handle
                 h = patch(obj.ax, x, y, [1, 1, 0], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
                     'HitTest', 'off', 'PickableParts', 'none');
                 obj.evidentiere(end+1) = h;
+                % Ridică doar piesele de pe cele două pătrate (nu toată tabla).
+                piesa = obj.tabla{lin + 1, col + 1};
+                if isa(piesa, 'Piesa')
+                    piesa.aduInFata();
+                end
             end
         end
 
