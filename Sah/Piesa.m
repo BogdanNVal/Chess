@@ -46,11 +46,13 @@ classdef Piesa < handle
         end
 
         function [xd, yd] = dataRect(~, poz)
+            % Cu YDir=normal, image mapează primul rând CData la YData(1).
+            % Punem YData descrescător ca vârful piesei să fie sus în pătrat.
             p = Piesa.PAD;
             c = poz(1);
             l = poz(2);
             xd = [c + p, c + 1 - p];
-            yd = [l + p, l + 1 - p];
+            yd = [l + 1 - p, l + p];
         end
 
         function muta(obj, mousePos)
@@ -59,7 +61,7 @@ classdef Piesa < handle
             x = mousePos(1);
             y = mousePos(2);
             obj.imagine.XData = [x - half, x + half];
-            obj.imagine.YData = [y - half, y + half];
+            obj.imagine.YData = [y + half, y - half];
             uistack(obj.imagine, 'top');
         end
 
