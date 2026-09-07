@@ -1,22 +1,23 @@
 classdef Piesa < handle
     properties
         tip
-        pozitie % [coloana, linie]
+        pozitie % [coloana, linie] 0-based
         imagine
+        fig
     end
 
     methods
         function obj = Piesa(tip, pozitie, fig)
             obj.tip = tip;
             obj.pozitie = pozitie;
+            obj.fig = fig;
 
-
-            % Desenează piesa pe UI
             l = 98;
             x = 63;
             y = 66;
             img = obj.getImagine(tip);
-            obj.imagine = uiimage(fig, 'ImageSource', img, 'Position', [x + l * pozitie(1), y + 97 * pozitie(2), l, l]);
+            obj.imagine = uiimage(fig, 'ImageSource', img, ...
+                'Position', [x + l * pozitie(1), y + 97 * pozitie(2), l, l]);
         end
 
         function img = getImagine(~, c)
@@ -50,14 +51,19 @@ classdef Piesa < handle
             y = 66;
             obj.imagine.Position = [x + l * poz(1), y + 97 * poz(2), l, l];
             drawnow expose;
-
         end
 
+        function promoveaza(obj, tipNou)
+            obj.tip = tipNou;
+            if isvalid(obj.imagine)
+                obj.imagine.ImageSource = obj.getImagine(tipNou);
+            end
+        end
 
         function delete(obj)
-            delete(obj.imagine);
+            if ~isempty(obj.imagine) && isvalid(obj.imagine)
+                delete(obj.imagine);
+            end
         end
-
-
     end
 end

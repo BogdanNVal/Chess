@@ -1,25 +1,27 @@
 classdef Robot < Jucator
 
     properties
-
         logic
+        lastMove  % full 6-field move last played
     end
 
     methods
-
         function obj = Robot(logic, depth)
-
             obj.logic = Engine(logic, depth);
+            obj.lastMove = [];
         end
 
         function mutare = muta(obj)
-
             mutareOptima = obj.logic.cautaMutare();
-            if ~mutareOptima
+            if isempty(mutareOptima) || isequal(mutareOptima, 0)
                 mutare = 0;
+                obj.lastMove = [];
             else
-                obj.logic.mutari.bitboard.actualizareTabla(mutareOptima)
-                mutare = [floor(mutareOptima(1)/8) + 1, rem(mutareOptima(1), 8) + 1, floor(mutareOptima(2)/8) + 1, rem(mutareOptima(2), 8) + 1];
+                obj.logic.mutari.bitboard.actualizareTabla(mutareOptima);
+                obj.lastMove = mutareOptima;
+                % UI coords: [fromRank, fromFile, toRank, toFile] 1-based
+                mutare = [floor(mutareOptima(1)/8) + 1, rem(mutareOptima(1), 8) + 1, ...
+                          floor(mutareOptima(2)/8) + 1, rem(mutareOptima(2), 8) + 1];
             end
         end
     end

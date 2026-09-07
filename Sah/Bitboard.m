@@ -1,335 +1,661 @@
 classdef Bitboard < handle
+    % Pozitie pe bitboards. Mutare: [from, to, piece, captured, special, promo]
+    % special: 0 normal, 1 castle KS, 2 castle QS, 3 en passant, 4 promotion
 
     properties
         % Piese Albe
-        P       uint64 % pioni
-        N       uint64 % cai
-        B       uint64 % nebuni
-        R       uint64 % ture
-        K       uint64 % rege
-        Q       uint64 % regina
+        P
+        N
+        B
+        R
+        K
+        Q
 
         % piese Negre
-        p       uint64 % pioni
-        n       uint64 % cai
-        b       uint64 % nebuni
-        r       uint64 % ture
-        k       uint64 % rege
-        q       uint64 % regina
+        p
+        n
+        b
+        r
+        k
+        q
 
-        pieseA  uint64
-        pieseN  uint64
-        tabla   uint64
+        pieseA
+        pieseN
+        tabla
 
-        flags   uint8 %
+        flags     % bit1 STM (1=negru), 2-5 castling KQkq
+        epSquare    % -1 = none, else 0..63
+
+        % Istoric pentru anulare: [flags, epSquare] pe fiecare make
+        istoric
+        istoricLen
+
+        % Material incremental (alb - negru), fara PST
+        material
+
+        % Zobrist
+        zobristKey
     end
 
+    properties (Constant)
+        % tip piesa -> ASCII majuscula: P N B R Q K
+        PIECE_ASCII = [80, 78, 66, 82, 81, 75]
+        VAL_PION = 100
+        VAL_CAL = 300
+        VAL_NEBUN = 310
+        VAL_TURA = 500
+        VAL_REGINA = 900
+        VAL_REGE = 10000
+    end
+
+    properties (Access = private)
+        zobristPieces   % 12 x 64
+        zobristSide
+        zobristCastle   % 16
+        zobristEp       % 8 files
+        pst             % 6 x 64, from white POV (a1=0 .. h8=63)
+    end
 
     methods
         function obj = Bitboard(fen)
-            % Constructor
+            obj.initZobrist();
+            obj.initPst();
+            obj.istoric = zeros(512, 2);
+            obj.istoricLen = 0;
             obj.FEN(fen);
         end
 
         function reseteaza(obj)
-            % reprezentarea pe 64 de biti a pozitiilor pieselor
-            obj.P = 0;
-            obj.N = 0;
-            obj.B = 0;
-            obj.R = 0;
-            obj.K = 0;
-            obj.Q = 0;
-
-            obj.p = 0;
-            obj.n = 0;
-            obj.b = 0;
-            obj.r = 0;
-            obj.k = 0;
-            obj.q = 0;
-
-            obj.pieseA = 0;
-            obj.pieseN = 0;
-            obj.tabla = 0;
-
-            obj.flags = 0;
-
+            obj.P = uint64(0); obj.N = uint64(0); obj.B = uint64(0);
+            obj.R = uint64(0); obj.K = uint64(0); obj.Q = uint64(0);
+            obj.p = uint64(0); obj.n = uint64(0); obj.b = uint64(0);
+            obj.r = uint64(0); obj.k = uint64(0); obj.q = uint64(0);
+            obj.pieseA = uint64(0);
+            obj.pieseN = uint64(0);
+            obj.tabla = uint64(0);
+            obj.flags = uint8(0);
+            obj.epSquare = int32(-1);
+            obj.istoricLen = 0;
+            obj.material = int32(0);
+            obj.zobristKey = uint64(0);
         end
 
-
         function FEN(obj, fen)
-            % setarea tablei folosind FEN
             obj.reseteaza();
             linie = 7;
             coloana = 0;
             str = strsplit(fen, ' ');
             piese = str{1};
 
-            for i = 1:strlength(piese)
+            for i = 1:length(piese)
                 if piese(i) == '/'
                     linie = linie - 1;
                     coloana = 0;
-                elseif isstrprop(piese(i), 'digit')
+                elseif piese(i) >= '0' && piese(i) <= '9'
                     coloana = coloana + str2double(piese(i));
                 else
-
                     obj.(piese(i)) = bitset(obj.(piese(i)), 8*linie+coloana+1);
                     obj.tabla = bitset(obj.tabla, 8*linie+coloana+1);
-                    if isstrprop(piese(i), 'lower')
+                    if piese(i) >= 'a' && piese(i) <= 'z'
                         obj.pieseN = bitset(obj.pieseN, 8*linie+coloana+1);
                     else
                         obj.pieseA = bitset(obj.pieseA, 8*linie+coloana+1);
                     end
                     coloana = coloana + 1;
-
                 end
             end
 
-            if str{2} == 'b'
+            if numel(str) >= 2 && str{2} == 'b'
                 obj.flags = bitset(obj.flags, 1);
             end
-            flag = str{3};
-            for i = 1:strlength(flag)
 
-                switch flag(i)
-                    case 'K'
-                        obj.flags = bitset(obj.flags, 2);
-                    case 'Q'
-                        obj.flags = bitset(obj.flags, 3);
-                    case 'k'
-                        obj.flags = bitset(obj.flags, 4);
-                    case 'q'
-                        obj.flags = bitset(obj.flags, 5);
-
+            if numel(str) >= 3
+                flag = str{3};
+                for i = 1:length(flag)
+                    switch flag(i)
+                        case 'K', obj.flags = bitset(obj.flags, 2);
+                        case 'Q', obj.flags = bitset(obj.flags, 3);
+                        case 'k', obj.flags = bitset(obj.flags, 4);
+                        case 'q', obj.flags = bitset(obj.flags, 5);
+                    end
                 end
-
             end
 
+            obj.epSquare = int32(-1);
+            if numel(str) >= 4 && str{4} ~= '-'
+                obj.epSquare = int32(obj.algebraicToSquare(str{4}));
+            end
+
+            obj.recomputeMaterial();
+            obj.recomputeZobrist();
         end
 
         function ocupat = Ocupat(obj, poz)
-            % Verifica daca un patrat este ocupat
-            ocupat = 0;
-            if bitand(obj.tabla, bitshift(uint64(1), poz))
-
-                ocupat = 1;
-            end
+            ocupat = bitand(obj.tabla, bitshift(uint64(1), poz)) ~= 0;
         end
 
         function piesa = obtinePiesa(obj, poz)
-            %gaseste ce piesa este pe un anumit patrat
-            piesa = "0";
-            if bitand(obj.P, bitshift(uint64(1), poz)) ~= 0
-                piesa = "P";
-            elseif bitand(obj.N, bitshift(uint64(1), poz)) ~= 0
-                piesa = "N";
-            elseif bitand(obj.B, bitshift(uint64(1), poz)) ~= 0
-                piesa = "B";
-            elseif bitand(obj.R, bitshift(uint64(1), poz)) ~= 0
-                piesa = "R";
-            elseif bitand(obj.K, bitshift(uint64(1), poz)) ~= 0
-                piesa = "K";
-            elseif bitand(obj.Q, bitshift(uint64(1), poz)) ~= 0
-                piesa = "Q";
-            elseif bitand(obj.p, bitshift(uint64(1), poz)) ~= 0
-                piesa = "p";
-            elseif bitand(obj.n, bitshift(uint64(1), poz)) ~= 0
-                piesa = "n";
-            elseif bitand(obj.b, bitshift(uint64(1), poz)) ~= 0
-                piesa = "b";
-            elseif bitand(obj.r, bitshift(uint64(1), poz)) ~= 0
-                piesa = "r";
-            elseif bitand(obj.k, bitshift(uint64(1), poz)) ~= 0
-                piesa = "k";
-            elseif bitand(obj.q, bitshift(uint64(1), poz)) ~= 0
-                piesa = "q";
+            piesa = '0';
+            bit = bitshift(uint64(1), poz);
+            if bitand(obj.P, bit), piesa = 'P';
+            elseif bitand(obj.N, bit), piesa = 'N';
+            elseif bitand(obj.B, bit), piesa = 'B';
+            elseif bitand(obj.R, bit), piesa = 'R';
+            elseif bitand(obj.K, bit), piesa = 'K';
+            elseif bitand(obj.Q, bit), piesa = 'Q';
+            elseif bitand(obj.p, bit), piesa = 'p';
+            elseif bitand(obj.n, bit), piesa = 'n';
+            elseif bitand(obj.b, bit), piesa = 'b';
+            elseif bitand(obj.r, bit), piesa = 'r';
+            elseif bitand(obj.k, bit), piesa = 'k';
+            elseif bitand(obj.q, bit), piesa = 'q';
             end
         end
 
         function piesa = obtineValoare(obj, poz)
-            % 1-pion , 2-cal, 3-nebun, 4-tura, 5-regina, 6-rege
-            piesa = 0;
-            if bitand(obj.P, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.p, bitshift(uint64(1), poz)) ~= 0
+            % 1-pion, 2-cal, 3-nebun, 4-tura, 5-regina, 6-rege
+            bit = bitshift(uint64(1), poz);
+            if bitand(obj.P, bit) || bitand(obj.p, bit)
                 piesa = 1;
-            elseif bitand(obj.N, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.n, bitshift(uint64(1), poz)) ~= 0
+            elseif bitand(obj.N, bit) || bitand(obj.n, bit)
                 piesa = 2;
-            elseif bitand(obj.B, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.b, bitshift(uint64(1), poz)) ~= 0
+            elseif bitand(obj.B, bit) || bitand(obj.b, bit)
                 piesa = 3;
-            elseif bitand(obj.R, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.r, bitshift(uint64(1), poz)) ~= 0
+            elseif bitand(obj.R, bit) || bitand(obj.r, bit)
                 piesa = 4;
-            elseif bitand(obj.Q, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.q, bitshift(uint64(1), poz)) ~= 0
+            elseif bitand(obj.Q, bit) || bitand(obj.q, bit)
                 piesa = 5;
-            elseif bitand(obj.K, bitshift(uint64(1), poz)) ~= 0 || bitand(obj.k, bitshift(uint64(1), poz)) ~= 0
+            elseif bitand(obj.K, bit) || bitand(obj.k, bit)
                 piesa = 6;
+            else
+                piesa = 0;
             end
         end
-
 
         function actualizareTabla(obj, mutare)
-            % Actualizeaza tabla
-            obj.tabla = bitxor(obj.tabla, bitshift(uint64(1), mutare(1)));
-            obj.tabla = bitor(obj.tabla, bitshift(uint64(1), mutare(2)));
-            f = bitget(obj.flags, 1);
-            if f
-                obj.pieseN = bitxor(obj.pieseN, bitshift(uint64(1), mutare(1)));
-                obj.pieseN = bitor(obj.pieseN, bitshift(uint64(1), mutare(2)));
-                if mutare(4)
-                    obj.pieseA = bitxor(obj.pieseA, bitshift(uint64(1), mutare(2)));
-                end
-            else
-                obj.pieseA = bitxor(obj.pieseA, bitshift(uint64(1), mutare(1)));
-                obj.pieseA = bitor(obj.pieseA, bitshift(uint64(1), mutare(2)));
-                if mutare(4)
-                    obj.pieseN = bitxor(obj.pieseN, bitshift(uint64(1), mutare(2)));
-                end
+            % mutare: [from, to, piece, captured, special, promo]
+            mutare = obj.normalizeMove(mutare);
+            from = mutare(1); to = mutare(2);
+            piece = mutare(3); captured = mutare(4);
+            special = mutare(5); promo = mutare(6);
+
+            obj.pushHistory();
+
+            f = bitget(obj.flags, 1); % 0 alb, 1 negru
+            fromBit = bitshift(uint64(1), from);
+            toBit = bitshift(uint64(1), to);
+
+            % Clear EP by default; may set again after double pawn push
+            oldEp = obj.epSquare;
+            if oldEp >= 0
+                obj.zobristXorEp(oldEp);
+            end
+            obj.epSquare = int32(-1);
+
+            switch special
+                case 1 % castle kingside
+                    obj.movePieceBits(piece, f, from, to);
+                    if f
+                        obj.movePieceBits(4, f, 63, 61); % h8->f8
+                    else
+                        obj.movePieceBits(4, f, 7, 5);   % h1->f1
+                    end
+                    obj.clearCastlingForSide(f);
+
+                case 2 % castle queenside
+                    obj.movePieceBits(piece, f, from, to);
+                    if f
+                        obj.movePieceBits(4, f, 56, 59); % a8->d8
+                    else
+                        obj.movePieceBits(4, f, 0, 3);   % a1->d1
+                    end
+                    obj.clearCastlingForSide(f);
+
+                case 3 % en passant
+                    if f
+                        capSq = to + 8;
+                    else
+                        capSq = to - 8;
+                    end
+                    obj.removePieceBits(1, ~f, capSq); % capture enemy pawn
+                    obj.movePieceBits(1, f, from, to);
+                    obj.updateCastlingRightsOnMove(piece, f, from, to, 1, ~f, capSq);
+
+                case 4 % promotion
+                    if captured
+                        obj.removePieceBits(captured, ~f, to);
+                    end
+                    obj.removePieceBits(1, f, from);          % remove pawn
+                    obj.placePieceBits(promo, f, to);         % place promo
+                    obj.updateCastlingRightsOnMove(1, f, from, to, captured, ~f, to);
+
+                otherwise % normal
+                    if captured
+                        obj.removePieceBits(captured, ~f, to);
+                    end
+                    obj.movePieceBits(piece, f, from, to);
+                    obj.updateCastlingRightsOnMove(piece, f, from, to, captured, ~f, to);
+
+                    % Double pawn push -> set EP square
+                    if piece == 1 && abs(to - from) == 16
+                        obj.epSquare = int32((from + to) / 2);
+                        obj.zobristXorEp(obj.epSquare);
+                    end
             end
 
-
-            switch mutare(3)
-                case 1
-                    c = 80; % P = 80
-                case 2
-                    c = 78; % N = 78
-                case 3
-                    c = 66; % B = 66
-                case 4
-                    c = 82; % R = 82
-                case 5
-                    c = 81; % Q = 81
-                case 6
-                    c = 75; % K = 75
-            end
-            obj.(char(c+f*32)) = bitxor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(1)));
-            obj.(char(c+f*32)) = bitor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(2)));
-
-            switch mutare(4)
-                case 0
-                    c = 0;
-                case 1
-                    c = 80; % P = 80
-                case 2
-                    c = 78; % N = 78
-                case 3
-                    c = 66; % B = 66
-                case 4
-                    c = 82; % R = 82
-                case 5
-                    c = 81; % Q = 81
-                case 6
-                    c = 75; % K = 75
-
-            end
-
+            % Flip side to move
             obj.flags = bitxor(obj.flags, uint8(1));
-            f = bitget(obj.flags, 1);
-            if c
-                obj.(char(c+f*32)) = bitxor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(2)));
-            end
-
+            obj.zobristKey = bitxor(obj.zobristKey, obj.zobristSide);
         end
 
-       
         function anulareMutare(obj, mutare)
-            
-            switch mutare(4)
-                case 0
-                    c = 0;
+            mutare = obj.normalizeMove(mutare);
+            from = mutare(1); to = mutare(2);
+            piece = mutare(3); captured = mutare(4);
+            special = mutare(5); promo = mutare(6);
+
+            % Restore STM / rights / ep from history (after popping, board
+            % pieces still need reverse move with the pre-move side).
+            [savedFlags, savedEp] = obj.popHistory();
+
+            % Current flags still have flipped STM; reverse using mover side
+            % = opposite of current STM = bitget(savedFlags,1)
+            f = bitget(savedFlags, 1);
+
+            switch special
                 case 1
-                    c = 80; % P = 80
+                    obj.movePieceBits(piece, f, to, from);
+                    if f
+                        obj.movePieceBits(4, f, 61, 63);
+                    else
+                        obj.movePieceBits(4, f, 5, 7);
+                    end
+
                 case 2
-                    c = 78; % N = 78
+                    obj.movePieceBits(piece, f, to, from);
+                    if f
+                        obj.movePieceBits(4, f, 59, 56);
+                    else
+                        obj.movePieceBits(4, f, 3, 0);
+                    end
+
                 case 3
-                    c = 66; % B = 66
+                    obj.movePieceBits(1, f, to, from);
+                    if f
+                        capSq = to + 8;
+                    else
+                        capSq = to - 8;
+                    end
+                    obj.placePieceBits(1, ~f, capSq);
+
                 case 4
-                    c = 82; % R = 82
-                case 5
-                    c = 81; % Q = 81
-                case 6
-                    c = 75; % K = 75
+                    obj.removePieceBits(promo, f, to);
+                    obj.placePieceBits(1, f, from);
+                    if captured
+                        obj.placePieceBits(captured, ~f, to);
+                    end
 
+                otherwise
+                    obj.movePieceBits(piece, f, to, from);
+                    if captured
+                        obj.placePieceBits(captured, ~f, to);
+                    end
             end
 
-            f = bitget(obj.flags, 1);
-            if c
-                obj.(char(c+f*32)) = bitor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(2)));
+            % Restore flags and EP (and fix zobrist via full recompute of
+            % side/castle/ep deltas relative to current key which tracked pieces)
+            if obj.epSquare >= 0
+                obj.zobristXorEp(obj.epSquare);
             end
-
-
-            obj.flags = bitxor(obj.flags, uint8(1));
-            obj.tabla = bitor(obj.tabla, bitshift(uint64(1), mutare(1)));
-            f = bitget(obj.flags, 1);
-
-            if f
-                obj.pieseN = bitor(obj.pieseN, bitshift(uint64(1), mutare(1)));
-                obj.pieseN = bitxor(obj.pieseN, bitshift(uint64(1), mutare(2)));
-                if mutare(4)
-                    obj.pieseA = bitor(obj.pieseA, bitshift(uint64(1), mutare(2)));
-                else
-                    obj.tabla = bitxor(obj.tabla, bitshift(uint64(1), mutare(2)));
-                end
-            else
-                obj.pieseA = bitor(obj.pieseA, bitshift(uint64(1), mutare(1)));
-                obj.pieseA = bitxor(obj.pieseA, bitshift(uint64(1), mutare(2)));
-                if mutare(4)
-                    obj.pieseN = bitxor(obj.pieseN, bitshift(uint64(1), mutare(2)));
-                else
-                    obj.tabla = bitxor(obj.tabla, bitshift(uint64(1), mutare(2)));
-                end
+            obj.flags = savedFlags;
+            obj.epSquare = savedEp;
+            % Side/castle bits in zobrist: recompute non-piece part
+            obj.recomputeZobristMeta();
+            if obj.epSquare >= 0
+                obj.zobristXorEp(obj.epSquare);
             end
-
-            switch mutare(3)
-                case 1
-                    c = 80; % P = 80
-                case 2
-                    c = 78; % N = 78
-                case 3
-                    c = 66; % B = 66
-                case 4
-                    c = 82; % R = 82
-                case 5
-                    c = 81; % Q = 81
-                case 6
-                    c = 75; % K = 75
-            end
-            obj.(char(c+f*32)) = bitor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(1)));
-            obj.(char(c+f*32)) = bitxor(obj.(char(c+f*32)), bitshift(uint64(1), mutare(2)));
-
-
         end
-
 
         function scor = evaluareTabla(obj)
-            % Evaluarea pozitiei
-
-            % Valori piese
-            Pion = 100;
-            Cal = 300;
-            Nebun = 310;
-            Tura = 500;
-            Regina = 900;
-            Rege = 10000;
-
-            scor = 0;
-            scor = scor + Pion * (sum(bitget(obj.P, 1:64)) - sum(bitget(obj.p, 1:64)));
-            scor = scor + Cal * (sum(bitget(obj.N, 1:64)) - sum(bitget(obj.n, 1:64)));
-            scor = scor + Nebun * (sum(bitget(obj.B, 1:64)) - sum(bitget(obj.b, 1:64)));
-            scor = scor + Tura * (sum(bitget(obj.R, 1:64)) - sum(bitget(obj.r, 1:64)));
-            scor = scor + Regina * (sum(bitget(obj.Q, 1:64)) - sum(bitget(obj.q, 1:64)));
-            scor = scor + Rege * (sum(bitget(obj.K, 1:64)) - sum(bitget(obj.k, 1:64)));
-
+            scor = double(obj.material) + obj.evaluatePst();
         end
 
         function disp(obj)
-
-            fprintf("Tabla:\n");
-
+            fprintf('Tabla:\n');
             for i = 7:-1:0
                 for j = 0:7
-                    fprintf(" "+obj.obtinePiesa(8*i+j))
+                    fprintf(' %s', obj.obtinePiesa(8*i+j));
                 end
-                fprintf("\n")
+                fprintf('\n');
+            end
+        end
+    end
+
+    methods (Access = private)
+        function m = normalizeMove(~, mutare)
+            m = zeros(1, 6);
+            n = numel(mutare);
+            m(1:n) = mutare(1:n);
+        end
+
+        function pushHistory(obj)
+            obj.istoricLen = obj.istoricLen + 1;
+            if obj.istoricLen > size(obj.istoric, 1)
+                obj.istoric = [obj.istoric; zeros(512, 2)];
+            end
+            obj.istoric(obj.istoricLen, 1) = double(obj.flags);
+            obj.istoric(obj.istoricLen, 2) = double(obj.epSquare);
+        end
+
+        function [flags, ep] = popHistory(obj)
+            flags = uint8(obj.istoric(obj.istoricLen, 1));
+            ep = int32(obj.istoric(obj.istoricLen, 2));
+            obj.istoricLen = obj.istoricLen - 1;
+        end
+
+        function code = pieceCode(~, tip, isBlack)
+            code = Bitboard.PIECE_ASCII(tip);
+            if isBlack
+                code = code + 32;
             end
         end
 
-    end
+        function val = pieceValue(~, tip)
+            switch tip
+                case 1, val = Bitboard.VAL_PION;
+                case 2, val = Bitboard.VAL_CAL;
+                case 3, val = Bitboard.VAL_NEBUN;
+                case 4, val = Bitboard.VAL_TURA;
+                case 5, val = Bitboard.VAL_REGINA;
+                case 6, val = Bitboard.VAL_REGE;
+                otherwise, val = 0;
+            end
+        end
 
+        function movePieceBits(obj, tip, isBlack, from, to)
+            obj.removePieceBits(tip, isBlack, from);
+            obj.placePieceBits(tip, isBlack, to);
+        end
+
+        function removePieceBits(obj, tip, isBlack, sq)
+            bit = bitshift(uint64(1), sq);
+            code = obj.pieceCode(tip, isBlack);
+            obj.(char(code)) = bitxor(obj.(char(code)), bit);
+            obj.tabla = bitxor(obj.tabla, bit);
+            if isBlack
+                obj.pieseN = bitxor(obj.pieseN, bit);
+                obj.material = obj.material + int32(obj.pieceValue(tip));
+            else
+                obj.pieseA = bitxor(obj.pieseA, bit);
+                obj.material = obj.material - int32(obj.pieceValue(tip));
+            end
+            obj.zobristXorPiece(tip, isBlack, sq);
+        end
+
+        function placePieceBits(obj, tip, isBlack, sq)
+            bit = bitshift(uint64(1), sq);
+            code = obj.pieceCode(tip, isBlack);
+            obj.(char(code)) = bitor(obj.(char(code)), bit);
+            obj.tabla = bitor(obj.tabla, bit);
+            if isBlack
+                obj.pieseN = bitor(obj.pieseN, bit);
+                obj.material = obj.material - int32(obj.pieceValue(tip));
+            else
+                obj.pieseA = bitor(obj.pieseA, bit);
+                obj.material = obj.material + int32(obj.pieceValue(tip));
+            end
+            obj.zobristXorPiece(tip, isBlack, sq);
+        end
+
+        function clearCastlingForSide(obj, isBlack)
+            if isBlack
+                if bitget(obj.flags, 4), obj.flags = bitset(obj.flags, 4, 0); end
+                if bitget(obj.flags, 5), obj.flags = bitset(obj.flags, 5, 0); end
+            else
+                if bitget(obj.flags, 2), obj.flags = bitset(obj.flags, 2, 0); end
+                if bitget(obj.flags, 3), obj.flags = bitset(obj.flags, 3, 0); end
+            end
+            obj.recomputeZobristCastle();
+        end
+
+        function updateCastlingRightsOnMove(obj, piece, isBlack, from, to, captured, capIsBlack, capSq)
+            changed = false;
+            % King move clears both rights
+            if piece == 6
+                if isBlack
+                    if bitget(obj.flags, 4), obj.flags = bitset(obj.flags, 4, 0); changed = true; end
+                    if bitget(obj.flags, 5), obj.flags = bitset(obj.flags, 5, 0); changed = true; end
+                else
+                    if bitget(obj.flags, 2), obj.flags = bitset(obj.flags, 2, 0); changed = true; end
+                    if bitget(obj.flags, 3), obj.flags = bitset(obj.flags, 3, 0); changed = true; end
+                end
+            end
+            % Rook move clears that side
+            if piece == 4
+                if ~isBlack
+                    if from == 7 && bitget(obj.flags, 2)
+                        obj.flags = bitset(obj.flags, 2, 0); changed = true;
+                    elseif from == 0 && bitget(obj.flags, 3)
+                        obj.flags = bitset(obj.flags, 3, 0); changed = true;
+                    end
+                else
+                    if from == 63 && bitget(obj.flags, 4)
+                        obj.flags = bitset(obj.flags, 4, 0); changed = true;
+                    elseif from == 56 && bitget(obj.flags, 5)
+                        obj.flags = bitset(obj.flags, 5, 0); changed = true;
+                    end
+                end
+            end
+            % Capturing a rook clears opponent rights
+            if captured == 4
+                if ~capIsBlack
+                    if capSq == 7 && bitget(obj.flags, 2)
+                        obj.flags = bitset(obj.flags, 2, 0); changed = true;
+                    elseif capSq == 0 && bitget(obj.flags, 3)
+                        obj.flags = bitset(obj.flags, 3, 0); changed = true;
+                    end
+                else
+                    if capSq == 63 && bitget(obj.flags, 4)
+                        obj.flags = bitset(obj.flags, 4, 0); changed = true;
+                    elseif capSq == 56 && bitget(obj.flags, 5)
+                        obj.flags = bitset(obj.flags, 5, 0); changed = true;
+                    end
+                end
+            end
+            if changed
+                obj.recomputeZobristCastle();
+            end
+            %#ok<*INUSD>
+            to; %#ok<VUNUS>
+        end
+
+        function recomputeMaterial(obj)
+            obj.material = int32(0);
+            obj.material = obj.material + int32(Bitboard.VAL_PION) * int32(obj.popcount(obj.P) - obj.popcount(obj.p));
+            obj.material = obj.material + int32(Bitboard.VAL_CAL) * int32(obj.popcount(obj.N) - obj.popcount(obj.n));
+            obj.material = obj.material + int32(Bitboard.VAL_NEBUN) * int32(obj.popcount(obj.B) - obj.popcount(obj.b));
+            obj.material = obj.material + int32(Bitboard.VAL_TURA) * int32(obj.popcount(obj.R) - obj.popcount(obj.r));
+            obj.material = obj.material + int32(Bitboard.VAL_REGINA) * int32(obj.popcount(obj.Q) - obj.popcount(obj.q));
+            obj.material = obj.material + int32(Bitboard.VAL_REGE) * int32(obj.popcount(obj.K) - obj.popcount(obj.k));
+        end
+
+        function n = popcount(~, bb)
+            % bitget is reliable across MATLAB releases for uint64
+            n = sum(bitget(uint64(bb), 1:64));
+        end
+
+        function sq = algebraicToSquare(~, alg)
+            file = lower(alg(1)) - 'a';
+            rank = str2double(alg(2)) - 1;
+            sq = rank * 8 + file;
+        end
+
+        function initPst(obj)
+            % Standard middlegame PST, indexed a1=1 .. h8=64 (square+1)
+            pawn = [
+                0,0,0,0,0,0,0,0
+                50,50,50,50,50,50,50,50
+                10,10,20,30,30,20,10,10
+                5,5,10,25,25,10,5,5
+                0,0,0,20,20,0,0,0
+                5,-5,-10,0,0,-10,-5,5
+                5,10,10,-20,-20,10,10,5
+                0,0,0,0,0,0,0,0
+            ];
+            knight = [
+                -50,-40,-30,-30,-30,-30,-40,-50
+                -40,-20,0,0,0,0,-20,-40
+                -30,0,10,15,15,10,0,-30
+                -30,5,15,20,20,15,5,-30
+                -30,0,15,20,20,15,0,-30
+                -30,5,10,15,15,10,5,-30
+                -40,-20,0,5,5,0,-20,-40
+                -50,-40,-30,-30,-30,-30,-40,-50
+            ];
+            bishop = [
+                -20,-10,-10,-10,-10,-10,-10,-20
+                -10,0,0,0,0,0,0,-10
+                -10,0,5,10,10,5,0,-10
+                -10,5,5,10,10,5,5,-10
+                -10,0,10,10,10,10,0,-10
+                -10,10,10,10,10,10,10,-10
+                -10,5,0,0,0,0,5,-10
+                -20,-10,-10,-10,-10,-10,-10,-20
+            ];
+            rook = [
+                0,0,0,0,0,0,0,0
+                5,10,10,10,10,10,10,5
+                -5,0,0,0,0,0,0,-5
+                -5,0,0,0,0,0,0,-5
+                -5,0,0,0,0,0,0,-5
+                -5,0,0,0,0,0,0,-5
+                -5,0,0,0,0,0,0,-5
+                0,0,0,5,5,0,0,0
+            ];
+            queen = [
+                -20,-10,-10,-5,-5,-10,-10,-20
+                -10,0,0,0,0,0,0,-10
+                -10,0,5,5,5,5,0,-10
+                -5,0,5,5,5,5,0,-5
+                0,0,5,5,5,5,0,-5
+                -10,5,5,5,5,5,0,-10
+                -10,0,5,0,0,0,0,-10
+                -20,-10,-10,-5,-5,-10,-10,-20
+            ];
+            king = [
+                -30,-40,-40,-50,-50,-40,-40,-30
+                -30,-40,-40,-50,-50,-40,-40,-30
+                -30,-40,-40,-50,-50,-40,-40,-30
+                -30,-40,-40,-50,-50,-40,-40,-30
+                -20,-30,-30,-40,-40,-30,-30,-20
+                -10,-20,-20,-20,-20,-20,-20,-10
+                20,20,0,0,0,0,20,20
+                20,30,10,0,0,10,30,20
+            ];
+            % Tables above are rank8..rank1 rows; convert to a1=0 index
+            obj.pst = zeros(6, 64);
+            tables = {pawn, knight, bishop, rook, queen, king};
+            for t = 1:6
+                T = tables{t};
+                for r = 0:7
+                    for c = 0:7
+                        % T(1,:) is rank 8
+                        obj.pst(t, r*8+c+1) = T(8-r, c+1);
+                    end
+                end
+            end
+        end
+
+        function s = evaluatePst(obj)
+            s = 0;
+            s = s + obj.pstSide(obj.P, 1, false) - obj.pstSide(obj.p, 1, true);
+            s = s + obj.pstSide(obj.N, 2, false) - obj.pstSide(obj.n, 2, true);
+            s = s + obj.pstSide(obj.B, 3, false) - obj.pstSide(obj.b, 3, true);
+            s = s + obj.pstSide(obj.R, 4, false) - obj.pstSide(obj.r, 4, true);
+            s = s + obj.pstSide(obj.Q, 5, false) - obj.pstSide(obj.q, 5, true);
+            s = s + obj.pstSide(obj.K, 6, false) - obj.pstSide(obj.k, 6, true);
+        end
+
+        function s = pstSide(obj, bb, tip, isBlack)
+            s = 0;
+            bits = find(bitget(bb, 1:64)) - 1;
+            for i = 1:numel(bits)
+                sq = bits(i);
+                if isBlack
+                    sqMir = xor(sq, 56); % flip rank
+                    s = s + obj.pst(tip, sqMir+1);
+                else
+                    s = s + obj.pst(tip, sq+1);
+                end
+            end
+        end
+
+        function initZobrist(obj)
+            rng(12345, 'twister');
+            lo = uint64(randi([0, 2147483647], 12, 64));
+            hi = uint64(randi([0, 2147483647], 12, 64));
+            obj.zobristPieces = bitor(lo, bitshift(hi, 32));
+            obj.zobristSide = bitor(uint64(randi(2147483647)), bitshift(uint64(randi(2147483647)), 32));
+            lo = uint64(randi([0, 2147483647], 16, 1));
+            hi = uint64(randi([0, 2147483647], 16, 1));
+            obj.zobristCastle = bitor(lo, bitshift(hi, 32));
+            lo = uint64(randi([0, 2147483647], 8, 1));
+            hi = uint64(randi([0, 2147483647], 8, 1));
+            obj.zobristEp = bitor(lo, bitshift(hi, 32));
+        end
+
+        function idx = pieceZobristIndex(~, tip, isBlack)
+            idx = tip + 6 * double(isBlack);
+        end
+
+        function zobristXorPiece(obj, tip, isBlack, sq)
+            idx = obj.pieceZobristIndex(tip, isBlack);
+            obj.zobristKey = bitxor(obj.zobristKey, obj.zobristPieces(idx, sq+1));
+        end
+
+        function zobristXorEp(obj, ep)
+            if ep >= 0
+                file = rem(double(ep), 8) + 1;
+                obj.zobristKey = bitxor(obj.zobristKey, obj.zobristEp(file));
+            end
+        end
+
+        function castleIndex = castleHashIndex(obj)
+            castleIndex = 1 + bitget(obj.flags, 2) + 2*bitget(obj.flags, 3) + ...
+                4*bitget(obj.flags, 4) + 8*bitget(obj.flags, 5);
+        end
+
+        function recomputeZobristCastle(obj)
+            % Expensive path only when rights change: rebuild meta
+            obj.recomputeZobristMeta();
+            if obj.epSquare >= 0
+                obj.zobristXorEp(obj.epSquare);
+            end
+        end
+
+        function recomputeZobristMeta(obj)
+            % Rebuild key from pieces + meta (safe after undo)
+            key = uint64(0);
+            boards = {obj.P, obj.N, obj.B, obj.R, obj.Q, obj.K, ...
+                      obj.p, obj.n, obj.b, obj.r, obj.q, obj.k};
+            for idx = 1:12
+                bits = find(bitget(boards{idx}, 1:64)) - 1;
+                for i = 1:numel(bits)
+                    key = bitxor(key, obj.zobristPieces(idx, bits(i)+1));
+                end
+            end
+            if bitget(obj.flags, 1)
+                key = bitxor(key, obj.zobristSide);
+            end
+            key = bitxor(key, obj.zobristCastle(obj.castleHashIndex()));
+            obj.zobristKey = key;
+        end
+
+        function recomputeZobrist(obj)
+            obj.recomputeZobristMeta();
+            if obj.epSquare >= 0
+                obj.zobristXorEp(obj.epSquare);
+            end
+        end
+    end
 end
