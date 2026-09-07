@@ -99,5 +99,12 @@ Sah/
 
 This repository is the software artifact for a bachelor's thesis on chess
 programming: bitboard representation, legal move generation, and adversarial
-search. MATLAB was the environment required/chosen for the thesis; the
-algorithms (bitboards, alpha-beta, TT) are language-independent.
+search. MATLAB was the environment required for the thesis; the algorithms
+(bitboards, alpha-beta, TT) are language-independent.
+
+## Credits / license (graphics)
+
+Piece images are from **JohnPablok**, *Chess pieces and board squares*
+[graphic resources], OpenGameArt.org:
+https://opengameart.org/content/chess-pieces-and-board-squares  
+Licensed under **Creative Commons BY-SA 3.0**.
