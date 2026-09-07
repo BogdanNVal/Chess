@@ -1,6 +1,6 @@
 classdef TranspositionTable < handle
-    % Simple fixed-size TT. Entry: key, depth, score, flag, move(1x6)
-    % flag: 0 exact, 1 lower, 2 upper
+    % TT de dimensiune fixă. Intrare: key, depth, score, flag, move(1×6)
+    % flag: 0 exact, 1 lower (bound inferior), 2 upper (bound superior)
 
     properties
         size

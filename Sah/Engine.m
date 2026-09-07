@@ -1,6 +1,6 @@
 classdef Engine < handle
-    % Faster alpha-beta: iterative deepening, aspiration, null-move,
-    % limited quiescence, TT, killers, time budget.
+    % Alpha-beta accelerat: iterative deepening, aspirație, null-move,
+    % quiescence limitată, TT, killers, buget de timp.
 
     properties
         adancime = 3
@@ -47,7 +47,6 @@ classdef Engine < handle
             maximizing = ~f;
             lastScore = 0;
 
-            % Always keep a legal fallback
             obj.mutari.generareMutari();
             if obj.mutari.numarMutariPosibile > 0
                 mutareOptima = obj.mutari.toateMutarile(1, :);
@@ -167,7 +166,7 @@ classdef Engine < handle
 
             inCheck = obj.mutari.sah();
 
-            % Null-move: skip in likely zugzwang (no non-pawn material)
+            % Null-move: sare în zugzwang probabil (fără material non-pion)
             if allowNull && ~inCheck && depth >= 3 && obj.hasNonPawnMaterial()
                 obj.mutari.bitboard.nullMoveBegin();
                 nullScore = obj.alphabeta(depth - 1 - Engine.NULL_R, alpha, beta, ply + 1, false);
@@ -203,7 +202,7 @@ classdef Engine < handle
                 for i = 1:size(moves, 1)
                     red = 0;
                     if depth >= 3 && i > 4 && moves(i, 4) == 0 && moves(i, 5) == 0 && ~inCheck
-                        % Don't reduce moves that give check
+                        % Nu reduce mutările care dau șah
                         obj.mutari.bitboard.actualizareTabla(moves(i, :));
                         givesCheck = obj.mutari.sah();
                         obj.mutari.bitboard.anulareMutare(moves(i, :));
@@ -235,6 +234,7 @@ classdef Engine < handle
                 for i = 1:size(moves, 1)
                     red = 0;
                     if depth >= 3 && i > 4 && moves(i, 4) == 0 && moves(i, 5) == 0 && ~inCheck
+                        % Nu reduce mutările care dau șah
                         obj.mutari.bitboard.actualizareTabla(moves(i, :));
                         givesCheck = obj.mutari.sah();
                         obj.mutari.bitboard.anulareMutare(moves(i, :));
@@ -287,7 +287,7 @@ classdef Engine < handle
 
             inCheck = obj.mutari.sah();
 
-            % In check: explore escapes; never stand-pat. Cap depth to avoid hangs.
+            % În șah: explorează evadări; niciodată stand-pat. Limitează adâncimea ca să nu blocheze.
             if inCheck
                 if qply >= Engine.QMAX + 2
                     scor = obj.mutari.bitboard.evaluareTabla();
@@ -393,7 +393,7 @@ classdef Engine < handle
         end
 
         function tf = hasNonPawnMaterial(obj)
-            % Side-to-move only: opponent pieces must not enable null-move in K+P zugzwang.
+            % Doar partea la mutare: piesele adversarului nu trebuie să activeze null-move în zugzwang K+P.
             bb = obj.mutari.bitboard;
             if bitget(bb.flags, 1)
                 tf = (bb.n | bb.b | bb.r | bb.q) ~= 0;

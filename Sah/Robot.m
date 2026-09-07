@@ -2,7 +2,7 @@ classdef Robot < Jucator
 
     properties
         logic
-        lastMove  % full 6-field move last played
+        lastMove  % ultima mutare jucată, format complet pe 6 câmpuri
     end
 
     methods
@@ -19,7 +19,7 @@ classdef Robot < Jucator
             else
                 obj.logic.mutari.bitboard.actualizareTabla(mutareOptima);
                 obj.lastMove = mutareOptima;
-                % UI coords: [fromRank, fromFile, toRank, toFile] 1-based
+                % Coordonate UI: [fromRank, fromFile, toRank, toFile] 1-based
                 mutare = [floor(mutareOptima(1)/8) + 1, rem(mutareOptima(1), 8) + 1, ...
                           floor(mutareOptima(2)/8) + 1, rem(mutareOptima(2), 8) + 1];
             end

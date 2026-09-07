@@ -64,7 +64,7 @@ classdef Joc < handle
                         obj.rand = ~obj.rand;
                     end
                 else
-                    % Robot: ignore any accidental UI move payload
+                    % Robot: ignoră orice payload accidental de mutare din UI
                     ok = muta(obj.adversar);
                     if ~isequal(ok, 0) && ~isempty(ok)
                         obj.ultimaMutare = obj.adversar.lastMove;

@@ -1,6 +1,6 @@
 classdef Mutari < handle
-    % Generare mutari legale. Format: [from, to, piece, captured, special, promo]
-    % special: 0 normal, 1 castle KS, 2 castle QS, 3 EP, 4 promotion
+    % Generare mutări legale. Format: [from, to, piece, captured, special, promo]
+    % special: 0 obișnuit, 1 rocadă KS, 2 rocadă QS, 3 EP, 4 promovare
 
     properties
         bitboard
@@ -52,7 +52,7 @@ classdef Mutari < handle
                 mutare = obj.toateMutarile(i, :);
                 obj.bitboard.actualizareTabla(mutare);
 
-                f = bitget(obj.bitboard.flags, 1); % after move: side to move flipped
+                f = bitget(obj.bitboard.flags, 1); % după mutare: STM e inversat
                 if f
                     regePoz = find(bitget(obj.bitboard.K, 1:64), 1) - 1;
                 else
@@ -70,10 +70,10 @@ classdef Mutari < handle
         end
 
         function bool = patratAtacat(obj, patrat)
-            % After a move, flags bit1 is the side about to move = attacker side.
-            % Attackers are the side indicated by f.
+            % După o mutare, bit1 din flags = partea care urmează (atacatorii).
+            % Atacatorii sunt partea indicată de f.
             bool = false;
-            f = bitget(obj.bitboard.flags, 1); % 1 = black to move = black attacks
+            f = bitget(obj.bitboard.flags, 1); % 1 = negru la mutare = atacuri negre
 
             pion = obj.bitboard.(char(80+f*32));
             cal = obj.bitboard.(char(78+f*32));
@@ -128,12 +128,12 @@ classdef Mutari < handle
         end
 
         function bool = sah(obj)
-            % Is the side to move in check?
+            % Partea la mutare e în șah?
             f = bitget(obj.bitboard.flags, 1);
-            % Flip so attackers are the opponent
+            % Inversează ca atacatorii să fie adversarul
             obj.bitboard.flags = bitset(uint8(obj.bitboard.flags), 1, ~f);
             if f
-                regePoz = find(bitget(obj.bitboard.k, 1:64), 1) - 1; % black king
+                regePoz = find(bitget(obj.bitboard.k, 1:64), 1) - 1;
             else
                 regePoz = find(bitget(obj.bitboard.K, 1:64), 1) - 1;
             end
@@ -181,27 +181,27 @@ classdef Mutari < handle
             f = bitget(obj.bitboard.flags, 1);
             score = zeros(obj.numarMutariPosibile, 1);
             for i = 1:obj.numarMutariPosibile
-                % MVV-LVA for captures
+                % MVV-LVA pentru capturi
                 score(i) = 1000 * moves(i, 4) - moves(i, 3);
                 if moves(i, 5) == 4
                     score(i) = score(i) + 800 + 50 * moves(i, 6);
                 elseif moves(i, 5) == 3
                     score(i) = score(i) + 900;
                 elseif moves(i, 5) == 1 || moves(i, 5) == 2
-                    score(i) = score(i) + 50; % mild castle preference
+                    score(i) = score(i) + 50; % preferință ușoară pentru rocadă
                 else
-                    % Quiet moves: prefer improving piece-square value (center!)
+                    % Mutări liniștite: preferă îmbunătățirea valorii piesă-pătrat (centru)
                     tip = moves(i, 3);
                     if tip >= 1 && tip <= 6
                         d = obj.bitboard.pstDelta(tip, moves(i, 1), moves(i, 2), f);
-                        % From side-to-move view: white wants +d, black wants -d in white-score
+                        % Din perspectiva STM: albul vrea +d, negrul −d în scorul alb
                         if f
                             score(i) = score(i) - d;
                         else
                             score(i) = score(i) + d;
                         end
                     end
-                    % Development bonus: knights/bishops off back rank
+                    % Bonus de dezvoltare: cai/nebuni ieșiți de pe rangul de bază
                     if tip == 2 || tip == 3
                         fromRank = floor(moves(i, 1) / 8);
                         if (~f && fromRank == 0) || (f && fromRank == 7)
@@ -221,7 +221,7 @@ classdef Mutari < handle
                 if ~doarCapturi
                     mask = obj.mPion(from, f);
                     mutariSimple = bitand(mask, bitcmp(obj.bitboard.tabla));
-                    % Block double-push if single blocked already handled in mPion
+                    % Blocarea avansului dublu când cel simplu e blocat e deja tratată în mPion
                     if mutariSimple
                         obj.emitPionQuiet(from, mutariSimple, f);
                     end
@@ -237,7 +237,7 @@ classdef Mutari < handle
                     obj.emitPionCaptures(from, capturi, f);
                 end
 
-                % En passant — require an enemy pawn on the capture square
+                % En passant — cere un pion advers pe pătratul de captură (nu pe destinație)
                 ep = obj.bitboard.epSquare;
                 if ep >= 0 && bitand(mask, bitshift(uint64(1), ep))
                     if f
@@ -280,7 +280,7 @@ classdef Mutari < handle
         end
 
         function emitPromos(obj, from, to, captured)
-            for promo = [5, 4, 3, 2] % Q R B N
+            for promo = [5, 4, 3, 2] % D T N C (damă, turn, nebun, cal)
                 obj.addMove([from, to, 1, captured, 4, promo]);
             end
         end
@@ -318,13 +318,12 @@ classdef Mutari < handle
 
         function mutariRocada(obj, f)
             if obj.sah()
-                return; % cannot castle out of check
+                return; % nu se poate roca din șah
             end
             if ~f
-                % White
                 if bitget(obj.bitboard.flags, 2) % KS
                     if ~obj.bitboard.Ocupat(5) && ~obj.bitboard.Ocupat(6)
-                        % transit f1,g1 not attacked; temp flip attackers = black
+                        % tranzit f1,g1 neatacate; atacatorii temporari = negru
                         if obj.squaresSafeForCastle([5, 6], 0)
                             obj.addMove([4, 6, 6, 0, 1, 0]);
                         end
@@ -356,7 +355,7 @@ classdef Mutari < handle
         end
 
         function ok = squaresSafeForCastle(obj, squares, moverIsBlack)
-            % patratAtacat expects flags STM = attacker. Set STM to opponent.
+            % patratAtacat așteaptă flags STM = atacator. Setează STM la adversar.
             saved = obj.bitboard.flags;
             obj.bitboard.flags = bitset(uint8(obj.bitboard.flags), 1, ~moverIsBlack);
             ok = true;

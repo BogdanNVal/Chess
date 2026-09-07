@@ -1,9 +1,10 @@
 classdef Bitboard < handle
-    % Pozitie pe bitboards. Mutare: [from, to, piece, captured, special, promo]
-    % special: 0 normal, 1 castle KS, 2 castle QS, 3 en passant, 4 promotion
+    % Poziție pe bitboards. Format mutare: [from, to, piece, captured, special, promo]
+    % special: 0 obișnuit, 1 rocadă pe flancul regelui (KS), 2 rocadă pe flancul damei (QS),
+    %          3 en passant, 4 promovare
 
     properties
-        % Piese Albe
+        % Piese albe
         P
         N
         B
@@ -11,7 +12,7 @@ classdef Bitboard < handle
         K
         Q
 
-        % piese Negre
+        % Piese negre
         p
         n
         b
@@ -23,23 +24,23 @@ classdef Bitboard < handle
         pieseN
         tabla
 
-        flags     % bit1 STM (1=negru), 2-5 castling KQkq
-        epSquare    % -1 = none, else 0..63
+        flags     % bit1: cine mută (STM; 1=negru); biții 2–5: drepturi de rocadă KQkq
+        epSquare    % -1 = niciun EP; altfel pătrat 0..63
 
-        % Istoric pentru anulare: [flags, epSquare] pe fiecare make
+        % Istoric pentru anulare: [flags, epSquare] la fiecare make
         istoric
         istoricLen
 
-        % Material + PST incremental (alb - negru)
+        % Material + PST incremental (alb − negru)
         material
         pstScore
 
-        % Zobrist
+        % Cheie Zobrist a poziției
         zobristKey
     end
 
     properties (Constant)
-        % tip piesa -> ASCII majuscula: P N B R Q K
+        % tip piesă -> ASCII majusculă: P N B R Q K
         PIECE_ASCII = [80, 78, 66, 82, 81, 75]
         VAL_PION = 100
         VAL_CAL = 300
@@ -50,16 +51,16 @@ classdef Bitboard < handle
     end
 
     properties
-        % Public for move-ordering PST deltas (6 x 64, white POV, a1=0)
+        % Public pentru ordonarea mutărilor: delta PST (6×64, perspectiva albului, a1=0)
         pst
     end
 
     properties (Access = private)
-        zobristPieces   % 12 x 64
+        zobristPieces   % 12 × 64
         zobristSide
-        zobristCastle   % 16
-        zobristEp       % 8 files
-        istoricZobrist  % uint64 stack parallel to istoric
+        zobristCastle   % 16 stări de rocadă
+        zobristEp       % 8 fișiere
+        istoricZobrist  % stivă uint64 paralelă cu istoric
     end
 
     methods
@@ -89,7 +90,7 @@ classdef Bitboard < handle
         end
 
         function delta = pstDelta(obj, tip, from, to, isBlack)
-            % Positional gain of moving tip from->to (white-positive)
+            % Câștig pozițional la mutarea tip from→to (pozitiv pentru alb)
             if isBlack
                 delta = obj.pst(tip, bitxor(to, 56)+1) - obj.pst(tip, bitxor(from, 56)+1);
                 delta = -delta;
@@ -204,7 +205,7 @@ classdef Bitboard < handle
             fromBit = bitshift(uint64(1), from);
             toBit = bitshift(uint64(1), to);
 
-            % Clear EP by default; may set again after double pawn push
+            % Șterge EP implicit; se poate seta din nou după avansul dublu al pionului
             oldEp = obj.epSquare;
             if oldEp >= 0
                 obj.zobristXorEp(oldEp);
@@ -212,57 +213,56 @@ classdef Bitboard < handle
             obj.epSquare = int32(-1);
 
             switch special
-                case 1 % castle kingside
+                case 1 % rocadă pe flancul regelui
                     obj.movePieceBits(piece, f, from, to);
                     if f
-                        obj.movePieceBits(4, f, 63, 61); % h8->f8
+                        obj.movePieceBits(4, f, 63, 61); % h8→f8
                     else
-                        obj.movePieceBits(4, f, 7, 5);   % h1->f1
+                        obj.movePieceBits(4, f, 7, 5);   % h1→f1
                     end
                     obj.clearCastlingForSide(f);
 
-                case 2 % castle queenside
+                case 2 % rocadă pe flancul damei
                     obj.movePieceBits(piece, f, from, to);
                     if f
-                        obj.movePieceBits(4, f, 56, 59); % a8->d8
+                        obj.movePieceBits(4, f, 56, 59); % a8→d8
                     else
-                        obj.movePieceBits(4, f, 0, 3);   % a1->d1
+                        obj.movePieceBits(4, f, 0, 3);   % a1→d1
                     end
                     obj.clearCastlingForSide(f);
 
-                case 3 % en passant
+                case 3 % en passant — pionul capturat e pe alt pătrat decât destinația
                     if f
                         capSq = to + 8;
                     else
                         capSq = to - 8;
                     end
-                    obj.removePieceBits(1, ~f, capSq); % capture enemy pawn
+                    obj.removePieceBits(1, ~f, capSq); % scoate pionul advers
                     obj.movePieceBits(1, f, from, to);
                     obj.updateCastlingRightsOnMove(piece, f, from, to, 1, ~f, capSq);
 
-                case 4 % promotion
+                case 4 % promovare
                     if captured
                         obj.removePieceBits(captured, ~f, to);
                     end
-                    obj.removePieceBits(1, f, from);          % remove pawn
-                    obj.placePieceBits(promo, f, to);         % place promo
+                    obj.removePieceBits(1, f, from);
+                    obj.placePieceBits(promo, f, to);
                     obj.updateCastlingRightsOnMove(1, f, from, to, captured, ~f, to);
 
-                otherwise % normal
+                otherwise
                     if captured
                         obj.removePieceBits(captured, ~f, to);
                     end
                     obj.movePieceBits(piece, f, from, to);
                     obj.updateCastlingRightsOnMove(piece, f, from, to, captured, ~f, to);
 
-                    % Double pawn push -> set EP square
+                    % Avans dublu de pion → setează pătratul EP
                     if piece == 1 && abs(to - from) == 16
                         obj.epSquare = int32((from + to) / 2);
                         obj.zobristXorEp(obj.epSquare);
                     end
             end
 
-            % Flip side to move
             obj.flags = bitxor(obj.flags, uint8(1));
             obj.zobristKey = bitxor(obj.zobristKey, obj.zobristSide);
         end
@@ -316,7 +316,7 @@ classdef Bitboard < handle
                     end
             end
 
-            % Restore meta + exact zobrist snapshot (avoids O(pieces) rebuild)
+            % Restaurează meta + snapshot Zobrist exact (evită reconstrucție O(piese))
             obj.flags = savedFlags;
             obj.epSquare = savedEp;
             obj.zobristKey = savedZob;
@@ -415,7 +415,7 @@ classdef Bitboard < handle
         function removePieceBits(obj, tip, isBlack, sq)
             bit = bitshift(uint64(1), sq);
             code = char(obj.pieceCode(tip, isBlack));
-            % Clear bits (do not XOR): removing from an empty square must be a no-op
+            % Șterge biții (nu XOR): scoaterea de pe un pătrat gol trebuie să fie no-op
             if bitand(obj.(code), bit) == 0
                 return;
             end
@@ -437,7 +437,7 @@ classdef Bitboard < handle
         function placePieceBits(obj, tip, isBlack, sq)
             bit = bitshift(uint64(1), sq);
             code = char(obj.pieceCode(tip, isBlack));
-            % Already occupied by this piece type: avoid double-counting material/PST/zobrist
+            % Deja ocupat de același tip: evită dublarea material/PST/Zobrist
             if bitand(obj.(code), bit) ~= 0
                 return;
             end
@@ -533,7 +533,7 @@ classdef Bitboard < handle
         end
 
         function n = popcount(~, bb)
-            % bitget is reliable across MATLAB releases for uint64
+            % bitget e fiabil pe uint64 în versiunile MATLAB
             n = sum(bitget(uint64(bb), 1:64));
         end
 
@@ -554,8 +554,8 @@ classdef Bitboard < handle
         end
 
         function initPst(obj)
-            % Stronger center control — opening prefers d/e pawns and developed knights
-            % Rows = rank8..rank1 (visual), then converted to a1-index
+            % Control mai puternic al centrului — deschiderea preferă pionii d/e și cai dezvoltați
+            % Rândurile = rang8..rang1 (vizual), apoi convertite la index a1=0
             pawn = [
                 0,  0,  0,  0,  0,  0,  0,  0
                80, 80, 80, 80, 80, 80, 80, 80

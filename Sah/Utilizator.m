@@ -17,7 +17,7 @@ classdef Utilizator < Jucator
 
         function ok = muta(obj, mutare)
             ok = 1;
-            % Resolve full move from generated list (handles special/promo)
+            % Rezolvă mutarea completă din lista generată (special/promo)
             full = obj.resolveMove(mutare);
             if isempty(full)
                 ok = 0;
@@ -29,7 +29,7 @@ classdef Utilizator < Jucator
         end
 
         function full = resolveMove(obj, mutare)
-            % mutare may be [from,to,piece,captured] or full 6-field
+            % mutare poate fi [from,to,piece,captured] sau formatul complet pe 6 câmpuri
             full = [];
             if isempty(obj.logic.toateMutarile)
                 return;
@@ -45,7 +45,7 @@ classdef Utilizator < Jucator
                 full = cand(1, :);
                 return;
             end
-            % Multiple (promotions): prefer matching promo if provided
+            % Mai multe (promovări): preferă promo-ul potrivit dacă e dat
             if numel(mutare) >= 6 && mutare(5) == 4 && mutare(6) > 0
                 match = cand(cand(:,6)==mutare(6), :);
                 if ~isempty(match)
@@ -53,7 +53,7 @@ classdef Utilizator < Jucator
                     return;
                 end
             end
-            % Default to queen promotion
+            % Implicit: promovare la damă
             match = cand(cand(:,6)==5, :);
             if ~isempty(match)
                 full = match(1, :);
