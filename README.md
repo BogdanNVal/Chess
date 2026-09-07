@@ -8,23 +8,23 @@ quiescence search, and a transposition table.
 
 ## Screenshots
 
-![Board at the starting position](docs/screenshots/tabla-initiala.png)
-![A game in progress](docs/screenshots/partida.png)
-![Check / checkmate highlighted](docs/screenshots/sah-mat.png)
+![Poziția inițială cu panoul de avantaj material](docs/screenshots/tabla-initiala.png)
+![Partidă în curs — evidențierea ultimei mutări](docs/screenshots/partida.png)
+![Șah mat — dialog de sfârșit de joc](docs/screenshots/sah-mat.png)
 
 ## Features
 
 - **Custom graphical interface**: 8x8 board with `uifigure` / `uiimage`,
-  piece PNGs, drag & drop, last-move highlight, and **legal-move hints**
-  when a piece is picked up.
-- **Two game modes**: User vs User and User vs Robot (search depth 1–5).
+  piece PNGs, drag & drop, last-move highlight, **legal-move hints**, and a
+  live **material advantage** label (`Egal` / `Alb +N` / `Negru +N`).
+- **Two game modes**: Jucător vs Jucător and Jucător vs Calculator (depth 1–5).
 - **Complete chess rules**: normal moves for all pieces, **castling**,
   **en passant**, and **pawn promotion** (UI dialog for humans; auto-queen
   for the engine).
 - **Check, checkmate, and stalemate** detection with visual feedback.
 - **FEN** loading for the starting position / reset (placement, side to
   move, castling rights, en passant square).
-- **Status line** while the robot is thinking.
+- **Status line** while the calculator is thinking.
 
 ## Search engine
 
@@ -53,8 +53,8 @@ quiescence search, and a transposition table.
    ```matlab
    joc = Sah();
    ```
-4. User vs User starts by default. For User vs Robot, use the menu:
-   **Joc nou → Utilizator vs Robot → Adâncime=N**.
+4. Jucător vs Jucător starts by default. For vs Calculator, use the menu:
+   **Joc nou → Jucător vs Calculator → Adâncime N**.
 ## Perft validation
 
 From the `Sah/` folder:
