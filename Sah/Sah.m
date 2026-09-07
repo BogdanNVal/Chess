@@ -267,8 +267,9 @@ classdef Sah < handle
         end
 
         function [coloana, linie] = mouseToSquare(~, mousePos)
-            coloana = floor((mousePos(1) - 63)/98) + 1;
-            linie = floor((mousePos(2) - 66)/98) + 1;
+            % Same geometry as Piesa / board axes (100px squares from [48,50])
+            coloana = floor((mousePos(1) - Piesa.BOARD_LEFT) / Piesa.SQUARE) + 1;
+            linie = floor((mousePos(2) - Piesa.BOARD_BOTTOM) / Piesa.SQUARE) + 1;
         end
     end
 

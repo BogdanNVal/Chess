@@ -6,18 +6,23 @@ classdef Piesa < handle
         fig
     end
 
+    properties (Constant)
+        % Must match Sah board axes: Position [48,50,800,800] → 100px squares
+        BOARD_LEFT = 48
+        BOARD_BOTTOM = 50
+        SQUARE = 100
+        PIECE = 88   % centered in square with 6px padding on each side
+    end
+
     methods
         function obj = Piesa(tip, pozitie, fig)
             obj.tip = tip;
             obj.pozitie = pozitie;
             obj.fig = fig;
 
-            l = 98;
-            x = 63;
-            y = 66;
-            img = obj.getImagine(tip);
+            img = obj.resolveImagePath(obj.getImagine(tip));
             obj.imagine = uiimage(fig, 'ImageSource', img, ...
-                'Position', [x + l * pozitie(1), y + l * pozitie(2), l, l]);
+                'Position', obj.pixelRect(pozitie));
         end
 
         function img = getImagine(~, c)
@@ -38,36 +43,47 @@ classdef Piesa < handle
             end
         end
 
+        function rect = pixelRect(~, poz)
+            % Center piece sprite inside its board square (same for all ranks)
+            pad = (Piesa.SQUARE - Piesa.PIECE) / 2;
+            x = Piesa.BOARD_LEFT + Piesa.SQUARE * poz(1) + pad;
+            y = Piesa.BOARD_BOTTOM + Piesa.SQUARE * poz(2) + pad;
+            rect = [x, y, Piesa.PIECE, Piesa.PIECE];
+        end
+
         function muta(obj, mousePos)
-            dimensiune = 98;
-            poz = [mousePos(1) - dimensiune / 2, mousePos(2) - dimensiune / 2, dimensiune, dimensiune];
-            obj.imagine.Position = poz;
+            d = Piesa.PIECE;
+            obj.imagine.Position = [mousePos(1) - d/2, mousePos(2) - d/2, d, d];
         end
 
         function mutaLaNouaPozitie(obj, poz)
             obj.pozitie = poz;
-            l = 98;
-            x = 63;
-            y = 66;
-            obj.imagine.Position = [x + l * poz(1), y + l * poz(2), l, l];
+            obj.imagine.Position = obj.pixelRect(poz);
             drawnow expose;
         end
 
         function promoveaza(obj, tipNou)
             obj.tip = tipNou;
-            img = obj.getImagine(tipNou);
+            img = obj.resolveImagePath(obj.getImagine(tipNou));
             if isempty(img)
                 return;
             end
-            % Resolve path relative to this class file so ImageSource
-            % still works if Current Folder changed during the dialog.
-            classDir = fileparts(mfilename('fullpath'));
-            imgPath = fullfile(classDir, img);
-            if ~isfile(imgPath)
-                imgPath = img; % fallback to relative
-            end
             if ~isempty(obj.imagine) && isvalid(obj.imagine)
-                obj.imagine.ImageSource = imgPath;
+                obj.imagine.ImageSource = img;
+            end
+        end
+
+        function path = resolveImagePath(~, rel)
+            if isempty(rel)
+                path = '';
+                return;
+            end
+            classDir = fileparts(mfilename('fullpath'));
+            candidate = fullfile(classDir, rel);
+            if exist(candidate, 'file') == 2
+                path = candidate;
+            else
+                path = rel;
             end
         end
 
