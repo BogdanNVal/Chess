@@ -291,7 +291,7 @@ classdef Sah < handle
 
         function mutareRobot(obj)
             obj.finalizat = false;
-            obj.setStatus('Robotul se gândește…');
+            obj.setStatus(sprintf('Robotul se gândește… (max ~%.0fs)', obj.joc.adversar.logic.timeLimit));
             drawnow;
             mutare = obj.joc.realizeazaMutare();
             obj.setStatus('');

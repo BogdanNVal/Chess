@@ -30,8 +30,9 @@ classdef Bitboard < handle
         istoric
         istoricLen
 
-        % Material incremental (alb - negru), fara PST
+        % Material + PST incremental (alb - negru)
         material
+        pstScore
 
         % Zobrist
         zobristKey
@@ -48,12 +49,17 @@ classdef Bitboard < handle
         VAL_REGE = 10000
     end
 
+    properties
+        % Public for move-ordering PST deltas (6 x 64, white POV, a1=0)
+        pst
+    end
+
     properties (Access = private)
         zobristPieces   % 12 x 64
         zobristSide
         zobristCastle   % 16
         zobristEp       % 8 files
-        pst             % 6 x 64, from white POV (a1=0 .. h8=63)
+        istoricZobrist  % uint64 stack parallel to istoric
     end
 
     methods
@@ -61,6 +67,7 @@ classdef Bitboard < handle
             obj.initZobrist();
             obj.initPst();
             obj.istoric = zeros(512, 2);
+            obj.istoricZobrist = zeros(512, 1, 'uint64');
             obj.istoricLen = 0;
             obj.FEN(fen);
         end
@@ -77,7 +84,18 @@ classdef Bitboard < handle
             obj.epSquare = int32(-1);
             obj.istoricLen = 0;
             obj.material = int32(0);
+            obj.pstScore = 0;
             obj.zobristKey = uint64(0);
+        end
+
+        function delta = pstDelta(obj, tip, from, to, isBlack)
+            % Positional gain of moving tip from->to (white-positive)
+            if isBlack
+                delta = obj.pst(tip, bitxor(to, 56)+1) - obj.pst(tip, bitxor(from, 56)+1);
+                delta = -delta;
+            else
+                delta = obj.pst(tip, to+1) - obj.pst(tip, from+1);
+            end
         end
 
         function FEN(obj, fen)
@@ -127,6 +145,7 @@ classdef Bitboard < handle
             end
 
             obj.recomputeMaterial();
+            obj.recomputePst();
             obj.recomputeZobrist();
         end
 
@@ -254,12 +273,7 @@ classdef Bitboard < handle
             piece = mutare(3); captured = mutare(4);
             special = mutare(5); promo = mutare(6);
 
-            % Restore STM / rights / ep from history (after popping, board
-            % pieces still need reverse move with the pre-move side).
-            [savedFlags, savedEp] = obj.popHistory();
-
-            % Current flags still have flipped STM; reverse using mover side
-            % = opposite of current STM = bitget(savedFlags,1)
+            [savedFlags, savedEp, savedZob] = obj.popHistory();
             f = bitget(savedFlags, 1);
 
             switch special
@@ -302,22 +316,31 @@ classdef Bitboard < handle
                     end
             end
 
-            % Restore flags and EP (and fix zobrist via full recompute of
-            % side/castle/ep deltas relative to current key which tracked pieces)
-            if obj.epSquare >= 0
-                obj.zobristXorEp(obj.epSquare);
-            end
+            % Restore meta + exact zobrist snapshot (avoids O(pieces) rebuild)
             obj.flags = savedFlags;
             obj.epSquare = savedEp;
-            % Side/castle bits in zobrist: recompute non-piece part
-            obj.recomputeZobristMeta();
-            if obj.epSquare >= 0
-                obj.zobristXorEp(obj.epSquare);
-            end
+            obj.zobristKey = savedZob;
         end
 
         function scor = evaluareTabla(obj)
-            scor = double(obj.material) + obj.evaluatePst();
+            scor = double(obj.material) + obj.pstScore;
+        end
+
+        function nullMoveBegin(obj)
+            obj.pushHistory();
+            if obj.epSquare >= 0
+                obj.zobristXorEp(obj.epSquare);
+            end
+            obj.epSquare = int32(-1);
+            obj.flags = bitxor(obj.flags, uint8(1));
+            obj.zobristKey = bitxor(obj.zobristKey, obj.zobristSide);
+        end
+
+        function nullMoveEnd(obj)
+            [savedFlags, savedEp, savedZob] = obj.popHistory();
+            obj.flags = savedFlags;
+            obj.epSquare = savedEp;
+            obj.zobristKey = savedZob;
         end
 
         function disp(obj)
@@ -342,14 +365,17 @@ classdef Bitboard < handle
             obj.istoricLen = obj.istoricLen + 1;
             if obj.istoricLen > size(obj.istoric, 1)
                 obj.istoric = [obj.istoric; zeros(512, 2)];
+                obj.istoricZobrist = [obj.istoricZobrist; zeros(512, 1, 'uint64')];
             end
             obj.istoric(obj.istoricLen, 1) = double(obj.flags);
             obj.istoric(obj.istoricLen, 2) = double(obj.epSquare);
+            obj.istoricZobrist(obj.istoricLen) = obj.zobristKey;
         end
 
-        function [flags, ep] = popHistory(obj)
+        function [flags, ep, zob] = popHistory(obj)
             flags = uint8(obj.istoric(obj.istoricLen, 1));
             ep = int32(obj.istoric(obj.istoricLen, 2));
+            zob = obj.istoricZobrist(obj.istoricLen);
             obj.istoricLen = obj.istoricLen - 1;
         end
 
@@ -385,9 +411,11 @@ classdef Bitboard < handle
             if isBlack
                 obj.pieseN = bitxor(obj.pieseN, bit);
                 obj.material = obj.material + int32(obj.pieceValue(tip));
+                obj.pstScore = obj.pstScore + obj.pst(tip, bitxor(sq, 56)+1);
             else
                 obj.pieseA = bitxor(obj.pieseA, bit);
                 obj.material = obj.material - int32(obj.pieceValue(tip));
+                obj.pstScore = obj.pstScore - obj.pst(tip, sq+1);
             end
             obj.zobristXorPiece(tip, isBlack, sq);
         end
@@ -400,14 +428,17 @@ classdef Bitboard < handle
             if isBlack
                 obj.pieseN = bitor(obj.pieseN, bit);
                 obj.material = obj.material - int32(obj.pieceValue(tip));
+                obj.pstScore = obj.pstScore - obj.pst(tip, bitxor(sq, 56)+1);
             else
                 obj.pieseA = bitor(obj.pieseA, bit);
                 obj.material = obj.material + int32(obj.pieceValue(tip));
+                obj.pstScore = obj.pstScore + obj.pst(tip, sq+1);
             end
             obj.zobristXorPiece(tip, isBlack, sq);
         end
 
         function clearCastlingForSide(obj, isBlack)
+            oldIdx = obj.castleHashIndex();
             if isBlack
                 if bitget(obj.flags, 4), obj.flags = bitset(obj.flags, 4, 0); end
                 if bitget(obj.flags, 5), obj.flags = bitset(obj.flags, 5, 0); end
@@ -415,12 +446,16 @@ classdef Bitboard < handle
                 if bitget(obj.flags, 2), obj.flags = bitset(obj.flags, 2, 0); end
                 if bitget(obj.flags, 3), obj.flags = bitset(obj.flags, 3, 0); end
             end
-            obj.recomputeZobristCastle();
+            newIdx = obj.castleHashIndex();
+            if oldIdx ~= newIdx
+                obj.zobristKey = bitxor(obj.zobristKey, obj.zobristCastle(oldIdx));
+                obj.zobristKey = bitxor(obj.zobristKey, obj.zobristCastle(newIdx));
+            end
         end
 
         function updateCastlingRightsOnMove(obj, piece, isBlack, from, to, captured, capIsBlack, capSq)
+            oldIdx = obj.castleHashIndex();
             changed = false;
-            % King move clears both rights
             if piece == 6
                 if isBlack
                     if bitget(obj.flags, 4), obj.flags = bitset(obj.flags, 4, 0); changed = true; end
@@ -430,7 +465,6 @@ classdef Bitboard < handle
                     if bitget(obj.flags, 3), obj.flags = bitset(obj.flags, 3, 0); changed = true; end
                 end
             end
-            % Rook move clears that side
             if piece == 4
                 if ~isBlack
                     if from == 7 && bitget(obj.flags, 2)
@@ -446,7 +480,6 @@ classdef Bitboard < handle
                     end
                 end
             end
-            % Capturing a rook clears opponent rights
             if captured == 4
                 if ~capIsBlack
                     if capSq == 7 && bitget(obj.flags, 2)
@@ -463,10 +496,12 @@ classdef Bitboard < handle
                 end
             end
             if changed
-                obj.recomputeZobristCastle();
+                newIdx = obj.castleHashIndex();
+                obj.zobristKey = bitxor(obj.zobristKey, obj.zobristCastle(oldIdx));
+                obj.zobristKey = bitxor(obj.zobristKey, obj.zobristCastle(newIdx));
             end
             %#ok<*INUSD>
-            to; %#ok<VUNUS>
+            to;
         end
 
         function recomputeMaterial(obj)
@@ -490,90 +525,89 @@ classdef Bitboard < handle
             sq = rank * 8 + file;
         end
 
+        function recomputePst(obj)
+            obj.pstScore = 0;
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.P, 1, false) - obj.pstSide(obj.p, 1, true);
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.N, 2, false) - obj.pstSide(obj.n, 2, true);
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.B, 3, false) - obj.pstSide(obj.b, 3, true);
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.R, 4, false) - obj.pstSide(obj.r, 4, true);
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.Q, 5, false) - obj.pstSide(obj.q, 5, true);
+            obj.pstScore = obj.pstScore + obj.pstSide(obj.K, 6, false) - obj.pstSide(obj.k, 6, true);
+        end
+
         function initPst(obj)
-            % Standard middlegame PST, indexed a1=1 .. h8=64 (square+1)
+            % Stronger center control — opening prefers d/e pawns and developed knights
+            % Rows = rank8..rank1 (visual), then converted to a1-index
             pawn = [
-                0,0,0,0,0,0,0,0
-                50,50,50,50,50,50,50,50
-                10,10,20,30,30,20,10,10
-                5,5,10,25,25,10,5,5
-                0,0,0,20,20,0,0,0
-                5,-5,-10,0,0,-10,-5,5
-                5,10,10,-20,-20,10,10,5
-                0,0,0,0,0,0,0,0
+                0,  0,  0,  0,  0,  0,  0,  0
+               80, 80, 80, 80, 80, 80, 80, 80
+               20, 20, 30, 45, 45, 30, 20, 20
+               10, 10, 20, 40, 40, 20, 10, 10
+                5,  5, 15, 35, 35, 15,  5,  5
+                5, -5,-10, 10, 10,-10, -5,  5
+                5, 10, 10,-25,-25, 10, 10,  5
+                0,  0,  0,  0,  0,  0,  0,  0
             ];
             knight = [
-                -50,-40,-30,-30,-30,-30,-40,-50
-                -40,-20,0,0,0,0,-20,-40
-                -30,0,10,15,15,10,0,-30
-                -30,5,15,20,20,15,5,-30
-                -30,0,15,20,20,15,0,-30
-                -30,5,10,15,15,10,5,-30
-                -40,-20,0,5,5,0,-20,-40
-                -50,-40,-30,-30,-30,-30,-40,-50
+               -50,-40,-30,-30,-30,-30,-40,-50
+               -40,-20,  0,  5,  5,  0,-20,-40
+               -30,  5, 15, 20, 20, 15,  5,-30
+               -30, 10, 20, 25, 25, 20, 10,-30
+               -30,  5, 20, 25, 25, 20,  5,-30
+               -30,  5, 15, 20, 20, 15,  5,-30
+               -40,-20,  0, 10, 10,  0,-20,-40
+               -50,-40,-20,-20,-20,-20,-40,-50
             ];
             bishop = [
-                -20,-10,-10,-10,-10,-10,-10,-20
-                -10,0,0,0,0,0,0,-10
-                -10,0,5,10,10,5,0,-10
-                -10,5,5,10,10,5,5,-10
-                -10,0,10,10,10,10,0,-10
-                -10,10,10,10,10,10,10,-10
-                -10,5,0,0,0,0,5,-10
-                -20,-10,-10,-10,-10,-10,-10,-20
+               -20,-10,-10,-10,-10,-10,-10,-20
+               -10,  5,  0,  0,  0,  0,  5,-10
+               -10, 10, 10, 15, 15, 10, 10,-10
+               -10,  0, 15, 20, 20, 15,  0,-10
+               -10,  5, 10, 20, 20, 10,  5,-10
+               -10, 10, 10, 10, 10, 10, 10,-10
+               -10,  5,  0,  0,  0,  0,  5,-10
+               -20,-10,-10,-10,-10,-10,-10,-20
             ];
             rook = [
-                0,0,0,0,0,0,0,0
-                5,10,10,10,10,10,10,5
-                -5,0,0,0,0,0,0,-5
-                -5,0,0,0,0,0,0,-5
-                -5,0,0,0,0,0,0,-5
-                -5,0,0,0,0,0,0,-5
-                -5,0,0,0,0,0,0,-5
-                0,0,0,5,5,0,0,0
+                0,  0,  0,  5,  5,  0,  0,  0
+               10, 15, 15, 15, 15, 15, 15, 10
+               -5,  0,  0,  0,  0,  0,  0, -5
+               -5,  0,  0,  0,  0,  0,  0, -5
+               -5,  0,  0,  0,  0,  0,  0, -5
+               -5,  0,  0,  0,  0,  0,  0, -5
+               -5,  0,  0,  0,  0,  0,  0, -5
+                0,  0,  0, 10, 10,  5,  0,  0
             ];
             queen = [
-                -20,-10,-10,-5,-5,-10,-10,-20
-                -10,0,0,0,0,0,0,-10
-                -10,0,5,5,5,5,0,-10
-                -5,0,5,5,5,5,0,-5
-                0,0,5,5,5,5,0,-5
-                -10,5,5,5,5,5,0,-10
-                -10,0,5,0,0,0,0,-10
-                -20,-10,-10,-5,-5,-10,-10,-20
+               -20,-10,-10, -5, -5,-10,-10,-20
+               -10,  0,  5,  0,  0,  0,  0,-10
+               -10,  5,  5,  5,  5,  5,  0,-10
+                -5,  0,  5,  5,  5,  5,  0, -5
+                 0,  0,  5,  5,  5,  5,  0, -5
+               -10,  5,  5,  5,  5,  5,  0,-10
+               -10,  0,  5,  0,  0,  0,  0,-10
+               -20,-10,-10, -5, -5,-10,-10,-20
             ];
             king = [
-                -30,-40,-40,-50,-50,-40,-40,-30
-                -30,-40,-40,-50,-50,-40,-40,-30
-                -30,-40,-40,-50,-50,-40,-40,-30
-                -30,-40,-40,-50,-50,-40,-40,-30
-                -20,-30,-30,-40,-40,-30,-30,-20
-                -10,-20,-20,-20,-20,-20,-20,-10
-                20,20,0,0,0,0,20,20
-                20,30,10,0,0,10,30,20
+               -30,-40,-40,-50,-50,-40,-40,-30
+               -30,-40,-40,-50,-50,-40,-40,-30
+               -30,-40,-40,-50,-50,-40,-40,-30
+               -30,-40,-40,-50,-50,-40,-40,-30
+               -20,-30,-30,-40,-40,-30,-30,-20
+               -10,-20,-20,-20,-20,-20,-20,-10
+                20, 20,  0,  0,  0,  0, 20, 20
+                20, 30, 10,  0,  0, 10, 30, 20
             ];
-            % Tables above are rank8..rank1 rows; convert to a1=0 index
             obj.pst = zeros(6, 64);
             tables = {pawn, knight, bishop, rook, queen, king};
             for t = 1:6
                 T = tables{t};
                 for r = 0:7
                     for c = 0:7
-                        % T(1,:) is rank 8
                         obj.pst(t, r*8+c+1) = T(8-r, c+1);
                     end
                 end
             end
-        end
-
-        function s = evaluatePst(obj)
-            s = 0;
-            s = s + obj.pstSide(obj.P, 1, false) - obj.pstSide(obj.p, 1, true);
-            s = s + obj.pstSide(obj.N, 2, false) - obj.pstSide(obj.n, 2, true);
-            s = s + obj.pstSide(obj.B, 3, false) - obj.pstSide(obj.b, 3, true);
-            s = s + obj.pstSide(obj.R, 4, false) - obj.pstSide(obj.r, 4, true);
-            s = s + obj.pstSide(obj.Q, 5, false) - obj.pstSide(obj.q, 5, true);
-            s = s + obj.pstSide(obj.K, 6, false) - obj.pstSide(obj.k, 6, true);
         end
 
         function s = pstSide(obj, bb, tip, isBlack)
@@ -582,8 +616,7 @@ classdef Bitboard < handle
             for i = 1:numel(bits)
                 sq = bits(i);
                 if isBlack
-                    sqMir = xor(sq, 56); % flip rank
-                    s = s + obj.pst(tip, sqMir+1);
+                    s = s + obj.pst(tip, bitxor(sq, 56)+1);
                 else
                     s = s + obj.pst(tip, sq+1);
                 end
@@ -625,16 +658,7 @@ classdef Bitboard < handle
                 4*bitget(obj.flags, 4) + 8*bitget(obj.flags, 5);
         end
 
-        function recomputeZobristCastle(obj)
-            % Expensive path only when rights change: rebuild meta
-            obj.recomputeZobristMeta();
-            if obj.epSquare >= 0
-                obj.zobristXorEp(obj.epSquare);
-            end
-        end
-
         function recomputeZobristMeta(obj)
-            % Rebuild key from pieces + meta (safe after undo)
             key = uint64(0);
             boards = {obj.P, obj.N, obj.B, obj.R, obj.Q, obj.K, ...
                       obj.p, obj.n, obj.b, obj.r, obj.q, obj.k};

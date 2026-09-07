@@ -188,14 +188,36 @@ classdef Mutari < handle
                 return;
             end
             moves = obj.toateMutarile(1:obj.numarMutariPosibile, :);
-            % MVV-LVA: score = 10*captured - piece (+ bonus for promo/castle)
+            f = bitget(obj.bitboard.flags, 1);
             score = zeros(obj.numarMutariPosibile, 1);
             for i = 1:obj.numarMutariPosibile
-                score(i) = 10 * moves(i, 4) - moves(i, 3);
+                % MVV-LVA for captures
+                score(i) = 1000 * moves(i, 4) - moves(i, 3);
                 if moves(i, 5) == 4
-                    score(i) = score(i) + 50 + moves(i, 6);
+                    score(i) = score(i) + 800 + 50 * moves(i, 6);
                 elseif moves(i, 5) == 3
-                    score(i) = score(i) + 20;
+                    score(i) = score(i) + 900;
+                elseif moves(i, 5) == 1 || moves(i, 5) == 2
+                    score(i) = score(i) + 50; % mild castle preference
+                else
+                    % Quiet moves: prefer improving piece-square value (center!)
+                    tip = moves(i, 3);
+                    if tip >= 1 && tip <= 6
+                        d = obj.bitboard.pstDelta(tip, moves(i, 1), moves(i, 2), f);
+                        % From side-to-move view: white wants +d, black wants -d in white-score
+                        if f
+                            score(i) = score(i) - d;
+                        else
+                            score(i) = score(i) + d;
+                        end
+                    end
+                    % Development bonus: knights/bishops off back rank
+                    if tip == 2 || tip == 3
+                        fromRank = floor(moves(i, 1) / 8);
+                        if (~f && fromRank == 0) || (f && fromRank == 7)
+                            score(i) = score(i) + 15;
+                        end
+                    end
                 end
             end
             [~, ord] = sort(score, 'descend');
